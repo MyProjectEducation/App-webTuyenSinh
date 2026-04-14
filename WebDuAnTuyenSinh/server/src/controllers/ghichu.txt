@@ -1,0 +1,1 @@
+Xử lý request từ client, điều hướng dữ liệu, trả về response (API)

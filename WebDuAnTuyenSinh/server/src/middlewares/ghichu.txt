@@ -1,0 +1,1 @@
+Các hàm chặn giữa request (Kiểm tra đăng nhập, phân quyền, upload file...)
