@@ -1,17 +1,17 @@
 import React, { useState } from 'react';
-import {
-  useAppContext,
-  AdmissionResult,
-  Preference } from
-'../context/AppContext';
+import { useAppContext, AdmissionResult, Preference } from '../context/AppContext';
+import { admissionService } from '../services/admissionService';
 import {
   PlayIcon,
   CheckCircleIcon,
   XCircleIcon,
   PlusIcon,
   TrashIcon,
-  EditIcon } from
+  EditIcon,
+  Loader2 } from
 'lucide-react';
+import { convertVsatToThpt } from '../utils/vsatConversion';
+
 export function AdmissionProcess() {
   const {
     candidates,
@@ -22,7 +22,9 @@ export function AdmissionProcess() {
     setPreferences,
     candidateScores,
     bonusPoints,
-    subjectCombinations
+    subjectCombinations,
+    majorCombinations,
+    isLoading
   } = useAppContext();
   const [diemSan, setDiemSan] = useState('18');
   const [hasRun, setHasRun] = useState(false);
@@ -36,24 +38,61 @@ export function AdmissionProcess() {
     maNganh: '',
     maToHop: ''
   });
-  // Calculate total score for a candidate based on a specific subject combination
-  const calculateTotalScore = (cccd: string, maToHop: string) => {
+  // Bảng chênh lệch (Hàng: Tổ hợp gốc, Cột: Tổ hợp hiện tại)
+  const DEVIATION_TABLE: Record<string, Record<string, number>> = {
+    'A00': { 'A00': 0, 'A01': -0.69, 'B00': -1.21, 'C00': 2.32, 'C01': 0.94, 'D01': -0.68, 'D07': -1.62 },
+    'A01': { 'A00': 0.69, 'A01': 0, 'B00': -0.52, 'C00': 3.01, 'C01': 1.63, 'D01': 0.01, 'D07': -0.93 },
+    'B00': { 'A00': 1.21, 'A01': 0.52, 'B00': 0, 'C00': 3.53, 'C01': 2.15, 'D01': 0.53, 'D07': -0.41 },
+    'C00': { 'A00': -2.32, 'A01': -3.01, 'B00': -3.53, 'C00': 0, 'C01': -1.38, 'D01': -3.00, 'D07': -3.94 },
+    'C01': { 'A00': -0.94, 'A01': -1.63, 'B00': -2.15, 'C00': 1.38, 'C01': 0, 'D01': -1.62, 'D07': -2.56 },
+    'D01': { 'A00': 0.68, 'A01': -0.01, 'B00': -0.53, 'C00': 3.00, 'C01': 1.62, 'D01': 0, 'D07': -0.94 }
+  };
+
+  const calculateTotalScore = (cccd: string, maNganh: string, maToHop: string) => {
     const combo = subjectCombinations.find((c) => c.maToHop === maToHop);
-    if (!combo) return 0;
-    // Get scores for this candidate
+    const major = majors.find((m) => m.maNganh === maNganh);
+    const majorCombo = majorCombinations.find((mc) => mc.maNganh === maNganh && mc.maToHop === maToHop);
+
+    if (!combo || !major) return 0;
+    
+    // Lấy điểm
     const scores = candidateScores.filter((s) => s.cccd === cccd);
-    // Find scores for the 3 subjects in the combination
-    // Note: This is a simplified logic. In reality, you'd need to handle different score types (THPT, DGNL) properly
-    const s1 = scores.find((s) => s.mon === combo.mon1)?.diem || 0;
-    const s2 = scores.find((s) => s.mon === combo.mon2)?.diem || 0;
-    const s3 = scores.find((s) => s.mon === combo.mon3)?.diem || 0;
-    return s1 + s2 + s3;
+    
+    const getConvertedScore = (monKey?: string) => {
+      if (!monKey) return 0;
+      const scoreObj = scores.find((s) => s.colName === monKey);
+      if (!scoreObj) return 0;
+      
+      if (scoreObj.loaiDiem === 'VSAT') {
+          return convertVsatToThpt(monKey, scoreObj.diem);
+      }
+      return scoreObj.diem;
+    };
+
+    const s1 = getConvertedScore(combo.mon1);
+    const s2 = getConvertedScore(combo.mon2);
+    const s3 = getConvertedScore(combo.mon3);
+
+    // Lấy trọng số
+    const w1 = majorCombo?.hsMon1 || 1;
+    const w2 = majorCombo?.hsMon2 || 1;
+    const w3 = majorCombo?.hsMon3 || 1;
+    const W = w1 + w2 + w3;
+
+    // ĐTHXT
+    const dthxt = ((s1 * w1 + s2 * w2 + s3 * w3) / W) * 3;
+
+    // ĐTHGXT
+    const toHopGoc = major.toHopGoc || 'A00';
+    let deviation = 0;
+    if (DEVIATION_TABLE[toHopGoc] && DEVIATION_TABLE[toHopGoc][maToHop] !== undefined) {
+      deviation = DEVIATION_TABLE[toHopGoc][maToHop];
+    }
+    const dthgxt = dthxt - deviation;
+
+    return dthgxt;
   };
-  const getBonusScore = (cccd: string) => {
-    return bonusPoints.
-    filter((p) => p.cccd === cccd).
-    reduce((sum, p) => sum + p.diem, 0);
-  };
+
   const runAdmission = () => {
     const threshold = parseFloat(diemSan);
     const results: AdmissionResult[] = [];
@@ -75,19 +114,34 @@ export function AdmissionProcess() {
       const candidatePrefs = preferences.
       filter((p) => p.cccd === cccd).
       sort((a, b) => a.thuTuNV - b.thuTuNV); // Sort by preference order
-      const bonus = getBonusScore(cccd);
-      // Calculate best score across all their preferences
+      
       let bestScore = 0;
+      let actualBonus = 0;
+      let actualTotal = 0;
+
       candidatePrefs.forEach((pref) => {
-        const baseScore = calculateTotalScore(cccd, pref.maToHop);
-        if (baseScore > bestScore) bestScore = baseScore;
+        const bonusObj = bonusPoints.find((p) => p.cccd === cccd && p.maNganh === pref.maNganh && p.maToHop === pref.maToHop);
+        
+        // Điểm cộng tổng (đã áp trần 3.0 trong cơ sở dữ liệu)
+        const dC_30 = bonusObj?.diemC || 0; 
+        const mDuT_30 = bonusObj?.diemUt || 0;
+        const totalBonus = bonusObj?.diem || (dC_30 + mDuT_30);
+
+        const dthgxt_raw = calculateTotalScore(cccd, pref.maNganh, pref.maToHop); // This returns Thang 30
+        const dxt = dthgxt_raw + totalBonus;
+
+        if (dxt > actualTotal) {
+           bestScore = dthgxt_raw;
+           actualBonus = totalBonus;
+           actualTotal = dxt;
+        }
       });
       return {
         candidate,
         prefs: candidatePrefs,
         baseScore: bestScore,
-        bonusScore: bonus,
-        totalScore: bestScore + bonus
+        bonusScore: actualBonus,
+        totalScore: actualTotal
       };
     });
     // Sort all candidates by total score descending
@@ -114,7 +168,10 @@ export function AdmissionProcess() {
       // Try to admit to highest preference possible
       for (const pref of item.prefs) {
         const major = majorAdmissions[pref.maNganh];
-        if (major && major.admitted < major.quota) {
+        const majorInfo = majors.find(m => m.maNganh === pref.maNganh);
+        const requiredScore = majorInfo?.diemTrungTuyen || threshold;
+
+        if (major && major.admitted < major.quota && item.totalScore >= requiredScore) {
           major.admitted++;
           admitted = true;
           admittedMajor = pref.maNganh;
@@ -157,47 +214,151 @@ export function AdmissionProcess() {
     });
     setIsModalOpen(true);
   };
-  const handleDeletePref = (id: string) => {
+  const handleDeletePref = async (id: string) => {
     if (confirm('Bạn có chắc chắn muốn xóa nguyện vọng này?')) {
-      setPreferences(preferences.filter((p) => p.id !== id));
+      try {
+        await admissionService.delete(id);
+        setPreferences(preferences.filter((p) => p.id !== id));
+      } catch (err) {
+         alert("Lỗi thao tác");
+      }
     }
   };
-  const handleSubmitPref = (e: React.FormEvent) => {
+  const handleSubmitPref = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingPref) {
-      setPreferences(
-        preferences.map((p) =>
-        p.id === editingPref.id ?
-        {
-          ...p,
+
+    // Kiểm tra trùng lặp nguyện vọng
+    if (!editingPref) {
+      const isDuplicateOrder = preferences.some(p => p.cccd === formData.cccd && p.thuTuNV.toString() === formData.thuTuNV);
+      if (isDuplicateOrder) {
+        alert(`Thí sinh này đã có Nguyện vọng ${formData.thuTuNV}! Vui lòng chọn thứ tự khác.`);
+        return;
+      }
+      
+      const isDuplicateMajor = preferences.some(p => p.cccd === formData.cccd && p.maNganh === formData.maNganh);
+      if (isDuplicateMajor) {
+        alert('Thí sinh này đã đăng ký ngành này rồi!');
+        return;
+      }
+    }
+
+    try {
+      if (editingPref) {
+        await admissionService.update(editingPref.id, {
+          ...formData, thuTuNV: parseInt(formData.thuTuNV)
+        });
+        setPreferences(
+          preferences.map((p) =>
+          p.id === editingPref.id ?
+          {
+            ...p,
+            ...formData,
+            thuTuNV: parseInt(formData.thuTuNV)
+          } :
+          p
+          )
+        );
+      } else {
+        const result = await admissionService.create({
+          ...formData, thuTuNV: parseInt(formData.thuTuNV)
+        });
+        const newPref: Preference = {
+          id: result.id,
           ...formData,
           thuTuNV: parseInt(formData.thuTuNV)
-        } :
-        p
-        )
-      );
-    } else {
-      const newPref: Preference = {
-        id: Date.now().toString(),
-        ...formData,
-        thuTuNV: parseInt(formData.thuTuNV)
-      };
-      setPreferences([...preferences, newPref]);
+        };
+        setPreferences([...preferences, newPref]);
+      }
+      setIsModalOpen(false);
+    } catch (err) {
+      alert("Lỗi thao tác");
     }
-    setIsModalOpen(false);
   };
   const admittedCount = admissionResults.filter(
     (r) => r.trangThai === 'Đậu'
   ).length;
+  const handleSaveResults = async () => {
+    try {
+      const payload: any[] = [];
+      
+      // Duyệt qua tất cả nguyện vọng hệ thống đang quản lý
+      preferences.forEach(p => {
+         // Tìm kết quả xét tuyển đối chiếu với nguyện vọng này
+         const result = admissionResults.find(r => r.cccd === p.cccd);
+         
+         let ketQua = 'KHONG_TRUNG_TUYEN';
+         let diemThi = 0;
+         let diemCong = 0;
+         let tongDiem = 0;
+
+         if (result) {
+            diemThi = result.diem;
+            diemCong = result.diemCong;
+            tongDiem = result.tongDiem;
+            if (result.trangThai === 'Đậu' && result.nganhTrungTuyen === p.maNganh) {
+                ketQua = 'TRUNG_TUYEN';
+            }
+         }
+         
+         payload.push({
+             cccd: p.cccd,
+             maNganh: p.maNganh,
+             ketQua,
+             diemThi,
+             diemCong,
+             tongDiem
+         });
+      });
+
+      await admissionService.saveResults(payload);
+      alert('Đã lưu kết quả thành công vào Database!');
+    } catch (e: any) {
+      console.error(e);
+      alert(`Debug Lỗi: ${e.message} - ${e.response ? JSON.stringify(e.response.data) : 'No response data'}`);
+    }
+  };
+
+  const [cccdError, setCccdError] = useState('');
+
+  const handleCccdBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const val = e.target.value.trim();
+    if (!val) {
+       setCccdError('');
+       return;
+    }
+    const cand = candidates.find(c => c.cccd === val);
+    if (cand) {
+      setFormData(prev => ({ ...prev, hoTen: cand.hoTen || ((cand as any).ho + ' ' + (cand as any).ten) }));
+      setCccdError('');
+    } else {
+      setFormData(prev => ({ ...prev, hoTen: '' }));
+      setCccdError('Không tìm thấy thí sinh trong quản lý!');
+    }
+  };
+
+  const availableCombos = formData.maNganh
+    ? majorCombinations
+        .filter(mc => mc.maNganh === formData.maNganh)
+        .map(mc => subjectCombinations.find(c => c.maToHop === mc.maToHop))
+        .filter(Boolean)
+    : subjectCombinations;
+
   return (
     <div className="p-8">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-slate-800 mb-2">
-          Nguyện vọng & Xét tuyển
-        </h1>
-        <p className="text-slate-600">
-          Quản lý nguyện vọng đăng ký và chạy thuật toán xét tuyển
-        </p>
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-800 mb-2">Xét tuyển đa phương thức</h1>
+          <p className="text-slate-600">Thực hiện xử lý điểm và kết quả qua bộ lọc nguyện vọng ưu tiên</p>
+        </div>
+        <div className="flex gap-4">
+            <button
+              onClick={handleSaveResults}
+              disabled={!hasRun || admissionResults.length === 0}
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white px-6 py-2 rounded-lg font-medium shadow transition-colors"
+            >
+              Lưu CSDL
+            </button>
+        </div>
       </div>
 
       {/* Preferences Section */}
@@ -215,7 +376,13 @@ export function AdmissionProcess() {
           </button>
         </div>
 
-        <div className="overflow-x-auto max-h-96">
+        <div className="overflow-x-auto max-h-96 relative min-h-[200px]">
+          {isLoading ? (
+             <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-70 z-10">
+               <Loader2 className="animate-spin text-blue-600" size={32} />
+               <span className="ml-2 text-slate-600">Đang tải dữ liệu...</span>
+             </div>
+          ) : null}
           <table className="w-full">
             <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
               <tr>
@@ -437,8 +604,9 @@ export function AdmissionProcess() {
                     cccd: e.target.value
                   })
                   }
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                
+                  onBlur={handleCccdBlur}
+                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 ${cccdError ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-500'}`} />
+                  {cccdError && <p className="text-xs text-red-500 mt-1">{cccdError}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -447,6 +615,7 @@ export function AdmissionProcess() {
                   <input
                   type="text"
                   required
+                  readOnly
                   value={formData.hoTen}
                   onChange={(e) =>
                   setFormData({
@@ -454,7 +623,7 @@ export function AdmissionProcess() {
                     hoTen: e.target.value
                   })
                   }
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  className="w-full px-3 py-2 border border-slate-300 bg-slate-50 cursor-not-allowed rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 
                 </div>
               </div>
@@ -489,7 +658,8 @@ export function AdmissionProcess() {
                   onChange={(e) =>
                   setFormData({
                     ...formData,
-                    maNganh: e.target.value
+                    maNganh: e.target.value,
+                    maToHop: '' // reset toHop when Nganh changes
                   })
                   }
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
@@ -515,10 +685,11 @@ export function AdmissionProcess() {
                     maToHop: e.target.value
                   })
                   }
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  disabled={!formData.maNganh}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:cursor-not-allowed">
                   
                     <option value="">Chọn tổ hợp</option>
-                    {subjectCombinations.map((c) =>
+                    {availableCombos.map((c: any) =>
                   <option key={c.id} value={c.maToHop}>
                         {c.maToHop}
                       </option>
@@ -537,7 +708,8 @@ export function AdmissionProcess() {
                 </button>
                 <button
                 type="submit"
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+                disabled={!!cccdError}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-lg transition-colors">
                 
                   Lưu
                 </button>
