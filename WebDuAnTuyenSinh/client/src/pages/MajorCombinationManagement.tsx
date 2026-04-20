@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { useAppContext, MajorCombination } from '../context/AppContext';
-import { PlusIcon, TrashIcon } from 'lucide-react';
+import { majorComboService } from '../services/majorComboService';
+import { PlusIcon, TrashIcon, Loader2 } from 'lucide-react';
 export function MajorCombinationManagement() {
   const {
     majorCombinations,
     setMajorCombinations,
     majors,
-    subjectCombinations
+    subjectCombinations,
+    isLoading
   } = useAppContext();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState({
@@ -20,12 +22,27 @@ export function MajorCombinationManagement() {
     });
     setIsModalOpen(true);
   };
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Bạn có chắc chắn muốn xóa liên kết này?')) {
-      setMajorCombinations(majorCombinations.filter((c) => c.id !== id));
+      try {
+        await majorComboService.delete(id);
+        setMajorCombinations(majorCombinations.filter((c) => c.id !== id));
+      } catch (err) {
+        alert("Lỗi khi xóa");
+      }
     }
   };
-  const handleSubmit = (e: React.FormEvent) => {
+  // Bảng chênh lệch (Hàng: Tổ hợp gốc, Cột: Tổ hợp hiện tại)
+  const DEVIATION_TABLE: Record<string, Record<string, number>> = {
+    'A00': { 'A00': 0, 'A01': -0.69, 'B00': -1.21, 'C00': 2.32, 'C01': 0.94, 'D01': -0.68, 'D07': -1.62 },
+    'A01': { 'A00': 0.69, 'A01': 0, 'B00': -0.52, 'C00': 3.01, 'C01': 1.63, 'D01': 0.01, 'D07': -0.93 },
+    'B00': { 'A00': 1.21, 'A01': 0.52, 'B00': 0, 'C00': 3.53, 'C01': 2.15, 'D01': 0.53, 'D07': -0.41 },
+    'C00': { 'A00': -2.32, 'A01': -3.01, 'B00': -3.53, 'C00': 0, 'C01': -1.38, 'D01': -3.00, 'D07': -3.94 },
+    'C01': { 'A00': -0.94, 'A01': -1.63, 'B00': -2.15, 'C00': 1.38, 'C01': 0, 'D01': -1.62, 'D07': -2.56 },
+    'D01': { 'A00': 0.68, 'A01': -0.01, 'B00': -0.53, 'C00': 3.00, 'C01': 1.62, 'D01': 0, 'D07': -0.94 }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     // Check if mapping already exists
     const exists = majorCombinations.some(
@@ -35,19 +52,54 @@ export function MajorCombinationManagement() {
       alert('Liên kết này đã tồn tại!');
       return;
     }
-    const newCombo: MajorCombination = {
-      id: Date.now().toString(),
-      maNganh: formData.maNganh,
-      maToHop: formData.maToHop
-    };
-    setMajorCombinations([...majorCombinations, newCombo]);
-    setIsModalOpen(false);
+    
+    // Tính tự động độ lệch
+    const major = majors.find(m => m.maNganh === formData.maNganh);
+    const toHopGoc = major?.toHopGoc || 'A00';
+    let doLech = 0;
+    if (DEVIATION_TABLE[toHopGoc] && DEVIATION_TABLE[toHopGoc][formData.maToHop] !== undefined) {
+      doLech = DEVIATION_TABLE[toHopGoc][formData.maToHop];
+    }
+    
+    const payload = { ...formData, doLech };
+
+    try {
+      const result = await majorComboService.create(payload);
+      const newCombo: MajorCombination = {
+        id: result.id,
+        maNganh: formData.maNganh,
+        maToHop: formData.maToHop,
+        doLech: doLech
+      };
+      setMajorCombinations([...majorCombinations, newCombo]);
+      setIsModalOpen(false);
+    } catch (err) {
+      alert("Lỗi lưu liên kết");
+    }
   };
   // Helper to get names
   const getMajorName = (maNganh: string) =>
-  majors.find((m) => m.maNganh === maNganh)?.tenNganh || maNganh;
+    majors.find((m) => m.maNganh === maNganh)?.tenNganh || maNganh;
   const getComboName = (maToHop: string) =>
-  subjectCombinations.find((c) => c.maToHop === maToHop)?.tenToHop || maToHop;
+    subjectCombinations.find((c) => c.maToHop === maToHop)?.tenToHop || maToHop;
+
+  const subjectNames: Record<string, string> = {
+    'TO': 'Toán', 'LI': 'Lý', 'HO': 'Hóa', 'SU': 'Sử', 'DI': 'Địa',
+    'VA': 'Văn', 'SI': 'Sinh', 'N1': 'Ngoại ngữ', 'TI': 'Tiếng Anh',
+    'KHAC': 'Môn khác', 'KTPL': 'KTPL'
+  };
+
+  const getSubjectDetail = (combo: MajorCombination) => {
+    if (!combo.thMon1) return <span className="text-slate-400 italic">Chưa map môn</span>;
+    const mapName = (code?: string) => code ? (subjectNames[code] || code) : '';
+    
+    const s1 = combo.thMon1 ? `${mapName(combo.thMon1)} x${combo.hsMon1 || 1}` : '';
+    const s2 = combo.thMon2 ? ` - ${mapName(combo.thMon2)} x${combo.hsMon2 || 1}` : '';
+    const s3 = combo.thMon3 ? ` - ${mapName(combo.thMon3)} x${combo.hsMon3 || 1}` : '';
+    
+    return s1 + s2 + s3;
+  };
+
   return (
     <div className="p-8">
       <div className="mb-6">
@@ -75,7 +127,13 @@ export function MajorCombinationManagement() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto relative min-h-[200px]">
+          {isLoading ? (
+            <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-70 z-10">
+              <Loader2 className="animate-spin text-blue-600" size={32} />
+              <span className="ml-2 text-slate-600">Đang tải dữ liệu...</span>
+            </div>
+          ) : null}
           <table className="w-full">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
@@ -83,7 +141,13 @@ export function MajorCombinationManagement() {
                   Ngành
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                  Tổ hợp môn
+                  Tổ hợp
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                  Chi tiết Môn & Hệ số
+                </th>
+                <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                  Độ lệch
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
                   Thao tác
@@ -110,6 +174,16 @@ export function MajorCombinationManagement() {
                     </div>
                     <div className="text-xs text-slate-500">
                       {getComboName(combo.maToHop)}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-sm font-medium text-blue-700 bg-blue-50 px-3 py-1 rounded inline-block">
+                      {getSubjectDetail(combo)}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-center">
+                    <div className="text-sm font-bold text-slate-700">
+                      {combo.doLech !== undefined ? parseFloat(combo.doLech.toString()).toFixed(2) : '0.00'}
                     </div>
                   </td>
                   <td className="px-6 py-4 text-sm">

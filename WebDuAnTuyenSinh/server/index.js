@@ -1,50 +1,39 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const db = require('./config/db');
-const bcrypt = require('bcrypt');
+
+// Import Routes
+const authRoutes = require('./src/routes/authRoutes');
+const candidateRoutes = require('./src/routes/candidateRoutes');
+const majorRoutes = require('./src/routes/majorRoutes');
+const subjectComboRoutes = require('./src/routes/subjectComboRoutes');
+const majorComboRoutes = require('./src/routes/majorComboRoutes');
+const conversionRoutes = require('./src/routes/conversionRoutes');
+const scoreRoutes = require('./src/routes/scoreRoutes');
+const bonusRoutes = require('./src/routes/bonusRoutes');
+const admissionRoutes = require('./src/routes/admissionRoutes');
+const dashboardRoutes = require('./src/routes/dashboardRoutes');
 
 const app = express();
 
-app.use(cors());
+// Cấu hình CORS chặt chẽ để frontend truyền và nhận cookie/header authorization
+app.use(cors({
+    origin: 'http://localhost:5173', // Chỉ Web React truy cập
+    credentials: true, // Cho phép truyền Authorization header
+}));
 app.use(express.json());
 
-// API lấy danh sách thí sinh
-app.get('/api/candidates', async (req, res) => {
-    try {
-        const [rows] = await db.query('SELECT * FROM xt_thisinhxettuyen25');
-        res.json(rows);
-    } catch (err) {
-        console.error("Lỗi khi query thí sinh:", err);
-        res.status(500).json({ error: 'Database error' });
-    }
-});
-
-// API login mẫu dùng BCrypt như yêu cầu
-app.post('/api/login', async (req, res) => {
-    try {
-        const { username, password } = req.body;
-        // Giả sử tài khoản admin nằm ở sys_users (Sẽ báo lỗi nếu bảng chưa tồn tại)
-        const [users] = await db.query('SELECT * FROM sys_users WHERE username = ?', [username]);
-        
-        if (users.length === 0) {
-            return res.status(401).json({ error: 'Tài khoản không tồn tại' });
-        }
-        
-        const user = users[0];
-        // Kiểm tra mật khẩu (Giả sử mật khẩu trong DB đã được băm bằng bcrypt)
-        const match = await bcrypt.compare(password, user.password);
-        
-        if (match) {
-            res.json({ message: 'Đăng nhập thành công', user: { id: user.id, username: user.username, role: user.role } });
-        } else {
-            res.status(401).json({ error: 'Sai mật khẩu' });
-        }
-    } catch (err) {
-        console.error("Lỗi khi login:", err);
-        res.status(500).json({ error: 'Database error' });
-    }
-});
+// Main Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/candidates', candidateRoutes);
+app.use('/api/majors', majorRoutes);
+app.use('/api/subject-combos', subjectComboRoutes);
+app.use('/api/major-combos', majorComboRoutes);
+app.use('/api/conversions', conversionRoutes);
+app.use('/api/scores', scoreRoutes);
+app.use('/api/bonus', bonusRoutes);
+app.use('/api/admissions', admissionRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

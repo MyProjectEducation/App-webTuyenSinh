@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useAppContext, SubjectCombination } from '../context/AppContext';
-import { PlusIcon, EditIcon, TrashIcon, UploadIcon } from 'lucide-react';
+import { subjectComboService } from '../services/subjectComboService';
+import { PlusIcon, EditIcon, TrashIcon, UploadIcon, Loader2 } from 'lucide-react';
 import { ImportModal } from '../components/ImportModal';
 export function SubjectCombinationManagement() {
-  const { subjectCombinations, setSubjectCombinations } = useAppContext();
+  const { subjectCombinations, setSubjectCombinations, isLoading } = useAppContext();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingCombo, setEditingCombo] = useState<SubjectCombination | null>(
@@ -38,32 +39,43 @@ export function SubjectCombinationManagement() {
     });
     setIsModalOpen(true);
   };
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Bạn có chắc chắn muốn xóa tổ hợp này?')) {
-      setSubjectCombinations(subjectCombinations.filter((c) => c.id !== id));
+      try {
+        await subjectComboService.delete(id);
+        setSubjectCombinations(subjectCombinations.filter((c) => c.id !== id));
+      } catch (err) {
+        alert("Lỗi khi xoá");
+      }
     }
   };
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingCombo) {
-      setSubjectCombinations(
-        subjectCombinations.map((c) =>
-        c.id === editingCombo.id ?
-        {
-          ...c,
+    try {
+      if (editingCombo) {
+        await subjectComboService.update(editingCombo.id, formData);
+        setSubjectCombinations(
+          subjectCombinations.map((c) =>
+          c.id === editingCombo.id ?
+          {
+            ...c,
+            ...formData
+          } :
+          c
+          )
+        );
+      } else {
+        const result = await subjectComboService.create(formData);
+        const newCombo: SubjectCombination = {
+          id: result.id,
           ...formData
-        } :
-        c
-        )
-      );
-    } else {
-      const newCombo: SubjectCombination = {
-        id: Date.now().toString(),
-        ...formData
-      };
-      setSubjectCombinations([...subjectCombinations, newCombo]);
+        };
+        setSubjectCombinations([...subjectCombinations, newCombo]);
+      }
+      setIsModalOpen(false);
+    } catch (err) {
+      alert("Lỗi lưu dữ liệu");
     }
-    setIsModalOpen(false);
   };
   const handleImport = (data: any[]) => {
     const newCombos = data.map((row, index) => ({
@@ -110,7 +122,13 @@ export function SubjectCombinationManagement() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto relative min-h-[200px]">
+          {isLoading ? (
+            <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-70 z-10">
+              <Loader2 className="animate-spin text-blue-600" size={32} />
+              <span className="ml-2 text-slate-600">Đang tải dữ liệu...</span>
+            </div>
+          ) : null}
           <table className="w-full">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
