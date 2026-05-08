@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { useAppContext, MajorCombination } from '../context/AppContext';
 import { majorComboService } from '../services/majorComboService';
-import { PlusIcon, TrashIcon, Loader2 } from 'lucide-react';
+import { PlusIcon, TrashIcon, Loader2, Upload as UploadIcon, Search } from 'lucide-react';
+import { ImportModal } from '../components/ImportModal';
+import Pagination from '../components/Pagination';
 export function MajorCombinationManagement() {
   const {
     majorCombinations,
@@ -11,6 +13,12 @@ export function MajorCombinationManagement() {
     isLoading
   } = useAppContext();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+  
   const [formData, setFormData] = useState({
     maNganh: '',
     maToHop: ''
@@ -77,6 +85,39 @@ export function MajorCombinationManagement() {
       alert("Lỗi lưu liên kết");
     }
   };
+  const handleImport = async (file: File) => {
+    try {
+      const formUpload = new FormData();
+      formUpload.append('file', file);
+      
+      const result = await majorComboService.importExcel(formUpload);
+      alert(result.message);
+      
+      // Tải lại dữ liệu liên kết
+      const newData = await majorComboService.getAll();
+      setMajorCombinations(newData);
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Lỗi khi import dữ liệu');
+    }
+  };
+
+  const handleDownloadTemplate = () => {
+    const headers = ['Mã ngành', 'Mã tổ hợp', 'Gốc'];
+    const sampleData = ['7140209', 'A00', '1'];
+    const csvContent = [
+      headers.join(','),
+      sampleData.join(',')
+    ].join('\n');
+
+    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute('download', 'template_nganh_tohop.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // Helper to get names
   const getMajorName = (maNganh: string) =>
     majors.find((m) => m.maNganh === maNganh)?.tenNganh || maNganh;
@@ -100,6 +141,28 @@ export function MajorCombinationManagement() {
     return s1 + s2 + s3;
   };
 
+  // Pagination logic
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
+
+  const filteredCombos = React.useMemo(() => {
+    if (!searchTerm) return majorCombinations;
+    return majorCombinations.filter(c => 
+      c.maNganh?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      c.maToHop?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      getMajorName(c.maNganh).toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [majorCombinations, searchTerm, majors]);
+
+  const totalItems = filteredCombos.length;
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
+  
+  const currentDataChunk = React.useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredCombos.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredCombos, currentPage]);
+
   return (
     <div className="p-8">
       <div className="mb-6">
@@ -113,17 +176,36 @@ export function MajorCombinationManagement() {
 
       <div className="bg-white rounded-lg shadow-md border border-slate-200">
         <div className="p-6 border-b border-slate-200">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <h2 className="text-lg font-semibold text-slate-800">
               Danh sách liên kết
             </h2>
-            <button
-              onClick={handleAdd}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
-              
-              <PlusIcon size={20} />
-              Thêm liên kết
-            </button>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search className="h-5 w-5 text-slate-400" />
+                </div>
+                <input
+                  type="text"
+                  placeholder="Tìm ngành hoặc tổ hợp..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
+                />
+              </div>
+              <button
+                onClick={() => setIsImportOpen(true)}
+                className="flex items-center gap-2 border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg font-medium transition-colors">
+                <UploadIcon size={20} />
+                Import Excel
+              </button>
+              <button
+                onClick={handleAdd}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
+                <PlusIcon size={20} />
+                Thêm liên kết
+              </button>
+            </div>
           </div>
         </div>
 
@@ -155,7 +237,7 @@ export function MajorCombinationManagement() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {majorCombinations.map((combo) =>
+              {currentDataChunk.map((combo) =>
               <tr
                 key={combo.id}
                 className="hover:bg-slate-50 transition-colors">
@@ -200,6 +282,13 @@ export function MajorCombinationManagement() {
             </tbody>
           </table>
         </div>
+        <Pagination 
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={totalItems}
+          itemsPerPage={itemsPerPage}
+          onPageChange={setCurrentPage}
+        />
       </div>
 
       {isModalOpen &&
@@ -279,6 +368,14 @@ export function MajorCombinationManagement() {
           </div>
         </div>
       }
+
+      <ImportModal 
+        isOpen={isImportOpen} 
+        onClose={() => setIsImportOpen(false)} 
+        onImport={handleImport} 
+        onDownloadTemplate={handleDownloadTemplate}
+        title="Import Ngành - Tổ hợp" 
+      />
     </div>);
 
 }

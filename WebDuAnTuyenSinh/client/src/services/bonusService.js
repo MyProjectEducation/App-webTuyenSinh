@@ -16,5 +16,13 @@ export const bonusService = {
   delete: async (id) => {
     const response = await api.delete(`/bonus/${id}`);
     return response.data;
+  },
+  importBonusPoints: async (formData) => {
+    const response = await api.post('/bonus/import', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+    return response.data;
   }
 };

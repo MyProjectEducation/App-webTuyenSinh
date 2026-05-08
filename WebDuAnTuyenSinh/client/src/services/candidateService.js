@@ -24,6 +24,15 @@ export const candidateService = {
     delete: async (id) => {
         const response = await api.delete(`/candidates/${id}`);
         return response.data;
+    },
+
+    importCandidates: async (formData) => {
+        const response = await api.post('/candidates/import', formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data'
+            }
+        });
+        return response.data;
     }
 };
 

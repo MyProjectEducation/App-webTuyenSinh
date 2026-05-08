@@ -1,15 +1,19 @@
 import React, { useState } from 'react';
 import { useAppContext, SubjectCombination } from '../context/AppContext';
 import { subjectComboService } from '../services/subjectComboService';
-import { PlusIcon, EditIcon, TrashIcon, UploadIcon, Loader2 } from 'lucide-react';
+import { PlusIcon, EditIcon, TrashIcon, UploadIcon, Loader2, Search } from 'lucide-react';
 import { ImportModal } from '../components/ImportModal';
+import Pagination from '../components/Pagination';
 export function SubjectCombinationManagement() {
   const { subjectCombinations, setSubjectCombinations, isLoading } = useAppContext();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
-  const [editingCombo, setEditingCombo] = useState<SubjectCombination | null>(
-    null
-  );
+  const [editingCombo, setEditingCombo] = useState<SubjectCombination | null>(null);
+  
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+  
   const [formData, setFormData] = useState({
     maToHop: '',
     tenToHop: '',
@@ -54,40 +58,75 @@ export function SubjectCombinationManagement() {
     try {
       if (editingCombo) {
         await subjectComboService.update(editingCombo.id, formData);
-        setSubjectCombinations(
-          subjectCombinations.map((c) =>
-          c.id === editingCombo.id ?
-          {
-            ...c,
-            ...formData
-          } :
-          c
-          )
-        );
+        fetchSubjectCombinations();
       } else {
-        const result = await subjectComboService.create(formData);
-        const newCombo: SubjectCombination = {
-          id: result.id,
-          ...formData
-        };
-        setSubjectCombinations([...subjectCombinations, newCombo]);
+        await subjectComboService.create(formData);
+        fetchSubjectCombinations();
       }
       setIsModalOpen(false);
     } catch (err) {
       alert("Lỗi lưu dữ liệu");
     }
   };
-  const handleImport = (data: any[]) => {
-    const newCombos = data.map((row, index) => ({
-      id: `imported-${Date.now()}-${index}`,
-      maToHop: row['Mã tổ hợp'] || '',
-      tenToHop: row['Tên tổ hợp'] || '',
-      mon1: row['Môn 1'] || '',
-      mon2: row['Môn 2'] || '',
-      mon3: row['Môn 3'] || ''
-    }));
-    setSubjectCombinations([...subjectCombinations, ...newCombos]);
+  const fetchSubjectCombinations = async () => {
+    try {
+      const data = await subjectComboService.getAll();
+      setSubjectCombinations(data);
+    } catch (err) {
+      console.error(err);
+    }
   };
+  const handleImport = async (file: File) => {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const result = await subjectComboService.importSubjectCombos(formData);
+      alert(result.message);
+      
+      fetchSubjectCombinations();
+      setIsImportOpen(false);
+    } catch (error: any) {
+      console.error('Lỗi import:', error);
+      alert(error.response?.data?.message || 'Lỗi khi import file Excel');
+    }
+  };
+
+  const handleDownloadTemplate = () => {
+    const headers = ['Mã tổ hợp', 'Tên tổ hợp', 'Môn 1', 'Môn 2', 'Môn 3'];
+    const sampleData = ['A00', 'Toán, Vật lí, Hóa học', 'TO', 'LI', 'HO'];
+    const csvContent = headers.join(',') + '\n' + sampleData.join(',');
+    const blob = new Blob(["\ufeff", csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", "Template_ToHopMon.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Pagination logic
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
+
+  const filteredCombos = React.useMemo(() => {
+    if (!searchTerm) return subjectCombinations;
+    return subjectCombinations.filter(c => 
+      c.tenToHop?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      c.maToHop?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [subjectCombinations, searchTerm]);
+
+  const totalItems = filteredCombos.length;
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
+  
+  const currentDataChunk = React.useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredCombos.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredCombos, currentPage]);
+
   return (
     <div className="p-8">
       <div className="mb-6">
@@ -99,11 +138,23 @@ export function SubjectCombinationManagement() {
 
       <div className="bg-white rounded-lg shadow-md border border-slate-200">
         <div className="p-6 border-b border-slate-200">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <h2 className="text-lg font-semibold text-slate-800">
               Danh sách tổ hợp
             </h2>
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search className="h-5 w-5 text-slate-400" />
+                </div>
+                <input
+                  type="text"
+                  placeholder="Tìm tổ hợp..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
+                />
+              </div>
               <button
                 onClick={() => setIsImportOpen(true)}
                 className="flex items-center gap-2 border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg font-medium transition-colors">
@@ -153,7 +204,7 @@ export function SubjectCombinationManagement() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {subjectCombinations.map((combo) =>
+              {currentDataChunk.map((combo) =>
               <tr
                 key={combo.id}
                 className="hover:bg-slate-50 transition-colors">
@@ -194,6 +245,13 @@ export function SubjectCombinationManagement() {
             </tbody>
           </table>
         </div>
+        <Pagination 
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={totalItems}
+          itemsPerPage={itemsPerPage}
+          onPageChange={setCurrentPage}
+        />
       </div>
 
       {isModalOpen &&
@@ -322,7 +380,7 @@ export function SubjectCombinationManagement() {
         isOpen={isImportOpen}
         onClose={() => setIsImportOpen(false)}
         onImport={handleImport}
-        columns={['Mã tổ hợp', 'Tên tổ hợp', 'Môn 1', 'Môn 2', 'Môn 3']}
+        onDownloadTemplate={handleDownloadTemplate}
         title="Import danh sách tổ hợp môn" />
       
     </div>);

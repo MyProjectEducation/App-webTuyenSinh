@@ -16,5 +16,13 @@ export const scoreService = {
   delete: async (id) => {
     const response = await api.delete(`/scores/${id}`);
     return response.data;
+  },
+  importScores: async (formData) => {
+    const response = await api.post('/scores/import', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+    return response.data;
   }
 };

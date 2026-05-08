@@ -20,5 +20,11 @@ export const admissionService = {
   saveResults: async (data) => {
     const response = await api.post('/admissions/save-results', data);
     return response.data;
+  },
+  importPreferences: async (formData) => {
+    const response = await api.post('/admissions/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return response.data;
   }
 };
