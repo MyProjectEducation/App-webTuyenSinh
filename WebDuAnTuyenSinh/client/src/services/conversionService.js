@@ -16,5 +16,13 @@ export const conversionService = {
     delete: async (id) => {
         const response = await api.delete(`/conversions/${id}`);
         return response.data;
+    },
+    importConversions: async (formData) => {
+        const response = await api.post('/conversions/import', formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data'
+            }
+        });
+        return response.data;
     }
 };

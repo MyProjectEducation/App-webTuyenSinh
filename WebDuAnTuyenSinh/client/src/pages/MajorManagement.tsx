@@ -1,14 +1,19 @@
 import React, { useState } from 'react';
 import { useAppContext, Major } from '../context/AppContext';
 import { majorService } from '../services/majorService';
-import { PlusIcon, EditIcon, TrashIcon, UploadIcon, Loader2 } from 'lucide-react';
+import { PlusIcon, EditIcon, TrashIcon, UploadIcon, Loader2, Search } from 'lucide-react';
 import { ImportModal } from '../components/ImportModal';
+import Pagination from '../components/Pagination';
 
 export function MajorManagement() {
   const { majors, setMajors, isLoading } = useAppContext();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingMajor, setEditingMajor] = useState<Major | null>(null);
+  
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const initialForm = {
     maNganh: '',
@@ -89,20 +94,10 @@ export function MajorManagement() {
     try {
       if (editingMajor) {
         await majorService.update(editingMajor.id, payload);
-        // Để UI mượt, ta lấy full thuộc tính. Cần refresh toàn bộ hoặc tự map payload -> State.
-        // Controller trả về payload. Phải map đúng các thuộc tính của AppContext vào Major
-        const updatedMajor: Major = {
-            id: editingMajor.id,
-            ...payload
-        };
-        setMajors(majors.map((m) => m.id === editingMajor.id ? updatedMajor : m));
+        fetchMajors(); // Refresh full data from server
       } else {
-        const result = await majorService.create(payload);
-        const newMajor: Major = {
-          id: result.id,
-          ...payload
-        };
-        setMajors([...majors, newMajor]);
+        await majorService.create(payload);
+        fetchMajors();
       }
       setIsModalOpen(false);
     } catch (err) {
@@ -110,22 +105,67 @@ export function MajorManagement() {
     }
   };
 
-  const handleImport = (data: any[]) => {
-    const newMajors = data.map((row, index) => ({
-      id: `imported-${Date.now()}-${index}`,
-      maNganh: row['Mã ngành'] || '',
-      tenNganh: row['Tên ngành'] || '',
-      chiTieu: parseInt(row['Chỉ tiêu']) || 0,
-      toHopGoc: '',
-      diemSan: 0,
-      diemTrungTuyen: 0,
-      tuyenThang: '0', dgnl: '0', thpt: '0', vsat: '0',
-      slXtt: 0, slDgnl: 0, slThpt: 0, slVsat: 0
-    }));
-    setMajors([...majors, ...newMajors]);
+  const fetchMajors = async () => {
+    try {
+      const data = await majorService.getAll();
+      setMajors(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleImport = async (file: File) => {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const result = await majorService.importMajors(formData);
+      alert(result.message);
+      
+      fetchMajors();
+      setIsImportOpen(false);
+    } catch (error: any) {
+      console.error('Lỗi import:', error);
+      alert(error.response?.data?.message || 'Lỗi khi import file Excel');
+    }
+  };
+
+  const handleDownloadTemplate = () => {
+    const headers = ['Mã ngành', 'Tên ngành', 'Tổ hợp gốc', 'Chỉ tiêu', 'Điểm sàn', 'Điểm chuẩn', 'Tuyển thẳng', 'ĐGNL', 'THPT', 'VSAT', 'SL Tuyển thẳng', 'SL ĐGNL', 'SL VSAT', 'SL THPT'];
+    const sampleData = ['7480201', 'Công nghệ thông tin', 'A00,A01', '100', '18', '24', '1', '1', '1', '1', '10', '20', '30', '40'];
+    const csvContent = headers.join(',') + '\n' + sampleData.join(',');
+    const blob = new Blob(["\ufeff", csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", "Template_Nganh.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const formatYesNo = (val: string) => val === '1' ? 'Có' : 'Không';
+
+  // Pagination logic
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
+
+  const filteredMajors = React.useMemo(() => {
+    if (!searchTerm) return majors;
+    return majors.filter(m => 
+      m.tenNganh?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      m.maNganh?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [majors, searchTerm]);
+
+  const totalItems = filteredMajors.length;
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
+  
+  const currentDataChunk = React.useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredMajors.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredMajors, currentPage]);
 
   return (
     <div className="p-8">
@@ -136,9 +176,21 @@ export function MajorManagement() {
 
       <div className="bg-white rounded-lg shadow-md border border-slate-200">
         <div className="p-6 border-b border-slate-200">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <h2 className="text-lg font-semibold text-slate-800">Danh sách ngành</h2>
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search className="h-5 w-5 text-slate-400" />
+                </div>
+                <input
+                  type="text"
+                  placeholder="Tìm ngành..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
+                />
+              </div>
               <button
                 onClick={() => setIsImportOpen(true)}
                 className="flex items-center gap-2 border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg font-medium transition-colors"
@@ -185,7 +237,7 @@ export function MajorManagement() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {majors.map((major) => (
+              {currentDataChunk.map((major) => (
                 <tr key={major.id} className="hover:bg-slate-50 transition-colors">
                   <td className="px-4 py-3 text-sm font-medium text-slate-800">{major.maNganh}</td>
                   <td className="px-4 py-3 text-sm text-slate-800 max-w-[200px] truncate" title={major.tenNganh}>{major.tenNganh}</td>
@@ -230,6 +282,13 @@ export function MajorManagement() {
             </tbody>
           </table>
         </div>
+        <Pagination 
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={totalItems}
+          itemsPerPage={itemsPerPage}
+          onPageChange={setCurrentPage}
+        />
       </div>
 
       {isModalOpen && (
@@ -361,7 +420,7 @@ export function MajorManagement() {
         isOpen={isImportOpen}
         onClose={() => setIsImportOpen(false)}
         onImport={handleImport}
-        columns={['Mã ngành', 'Tên ngành', 'Chỉ tiêu']}
+        onDownloadTemplate={handleDownloadTemplate}
         title="Import danh sách ngành"
       />
     </div>
