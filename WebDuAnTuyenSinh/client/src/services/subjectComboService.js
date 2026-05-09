@@ -16,5 +16,13 @@ export const subjectComboService = {
     delete: async (id) => {
         const response = await api.delete(`/subject-combos/${id}`);
         return response.data;
+    },
+    importSubjectCombos: async (formData) => {
+        const response = await api.post('/subject-combos/import', formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data'
+            }
+        });
+        return response.data;
     }
 };

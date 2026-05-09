@@ -3,7 +3,7 @@ import { useAppContext } from '../context/AppContext';
 import { scoreService } from '../services/scoreService';
 import { PlusIcon, EditIcon, TrashIcon, UploadIcon, Loader2, SaveIcon } from 'lucide-react';
 import { ImportModal } from '../components/ImportModal';
-import { Pagination } from '../components/Pagination';
+import Pagination from '../components/Pagination';
 
 type ScoreType = 'THPT' | 'VSAT' | 'DGNL';
 
@@ -70,6 +70,8 @@ export function CandidateScoreManagement() {
 
   // Filter scores by active tab (for display)
   const filteredScores = candidateScores.filter((s) => s.loaiDiem === activeTab);
+  const totalItems = filteredScores.length;
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
   const paginatedScores = filteredScores.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
@@ -156,8 +158,43 @@ export function CandidateScoreManagement() {
     }
   };
 
-  const handleImport = (data: any[]) => {
-    // Để giữ tinh giản code import
+  const fetchScores = async () => {
+    try {
+      const data = await scoreService.getAll();
+      setCandidateScores(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleImport = async (file: File) => {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const result = await scoreService.importScores(formData);
+      alert(result.message);
+      
+      fetchScores();
+      setIsImportOpen(false);
+    } catch (error: any) {
+      console.error('Lỗi import:', error);
+      alert(error.response?.data?.message || 'Lỗi khi import file Excel');
+    }
+  };
+
+  const handleDownloadTemplate = () => {
+    const headers = ['CCCD', 'Phương thức', 'Toán', 'Vật lí', 'Hóa học', 'Sinh học', 'Lịch sử', 'Địa lí', 'Ngữ văn', 'Ngoại ngữ (Thi)', 'Ngoại ngữ (Quy đổi)', 'Công nghệ (CN)', 'Công nghệ (NN)', 'Tin học', 'GDKT & PL', 'ĐGNL', 'Năng khiếu 1', 'Năng khiếu 2'];
+    const sampleData = ['012345678901', 'THPT', '8.5', '7.0', '8.0', '', '', '', '6.5', '7.5', '', '', '', '', '', '', '', ''];
+    const csvContent = headers.join(',') + '\n' + sampleData.join(',');
+    const blob = new Blob(["\ufeff", csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", "Template_DiemThiSinh.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   // Find candidate name logic
@@ -285,126 +322,150 @@ export function CandidateScoreManagement() {
           </table>
         </div>
 
-        <Pagination currentPage={currentPage} totalItems={filteredScores.length} itemsPerPage={itemsPerPage} onPageChange={setCurrentPage} />
+        <Pagination 
+          currentPage={currentPage} 
+          totalPages={totalPages}
+          totalItems={totalItems} 
+          itemsPerPage={itemsPerPage} 
+          onPageChange={setCurrentPage} 
+        />
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-slate-200 sticky top-0 bg-white z-10 flex justify-between items-center">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[95vh] overflow-y-auto overflow-x-hidden flex flex-col">
+            
+            <div className="p-6 border-b border-slate-100 sticky top-0 bg-white/95 backdrop-blur-sm z-10 flex justify-between items-center">
               <div>
-                <h2 className="text-xl font-bold text-slate-800">Quản lý Cụm điểm Thí sinh (Master-Detail Grid)</h2>
-                <p className="text-sm text-slate-500">Cập nhật hàng loạt điểm số của một học sinh trong duy nhất 1 thao tác Lưu</p>
+                <h2 className="text-2xl font-bold text-slate-800">Cập nhật Điểm Thí sinh (Master-Detail Grid)</h2>
+                <p className="text-sm text-slate-500 mt-1">Quản lý nguyên khối toàn bộ điểm của một thí sinh</p>
               </div>
+              <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                 <svg className="w-6 h-6 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+              </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-6">
-              {/* VÙNG Định danh Master */}
-              <div className="bg-slate-50 p-5 rounded-lg border border-slate-200 mb-6">
-                <h3 className="font-semibold text-slate-700 mb-4">Thông tin Định danh (Master)</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="relative">
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Mã CCCD thí sinh *</label>
-                    <input 
-                      type="text" 
-                      required 
-                      list="candidate-cccd-list"
-                      placeholder="Gõ CCCD để tìm kiếm..."
-                      value={selectedCccd} 
-                      onChange={(e) => setSelectedCccd(e.target.value)} 
-                      className="w-full px-3 py-2 border border-blue-400 bg-blue-50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-blue-900" 
-                    />
-                    <datalist id="candidate-cccd-list">
-                      {candidates.map(c => (
-                        <option key={c.id} value={c.cccd}>{c.ho} {c.ten} (SBD: {c.soBaoDanh})</option>
-                      ))}
-                    </datalist>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Họ Tên Thí sinh</label>
-                    <div className="w-full px-3 py-2 bg-slate-200 border border-slate-300 rounded-lg text-slate-600 font-semibold truncate cursor-not-allowed">
-                      {candidateInfo ? `${candidateInfo.ho} ${candidateInfo.ten}` : '--- Chưa chọn hợp lệ ---'}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Phương thức xét (Tab)</label>
-                    <select 
-                      value={masterLoaiDiem} 
-                      onChange={(e) => setMasterLoaiDiem(e.target.value as ScoreType)} 
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+            <div className="p-6 md:p-8 flex-1">
+              {/* 1. MASTER HEADER */}
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 border-b border-slate-100 pb-6 gap-6">
+                <div className="w-full md:w-1/2">
+                   <label className="block text-sm font-semibold text-slate-700 mb-2">Tìm kiếm & Chọn Thí sinh *</label>
+                   <div className="relative">
+                      <input 
+                        type="text" 
+                        required 
+                        list="candidate-cccd-list"
+                        placeholder="Nhập CCCD hoặc Số báo danh..."
+                        value={selectedCccd} 
+                        onChange={(e) => setSelectedCccd(e.target.value)} 
+                        className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium text-slate-800" 
+                      />
+                      <datalist id="candidate-cccd-list">
+                        {candidates.map(c => (
+                          <option key={c.id} value={c.cccd}>{c.ho} {c.ten} (SBD: {c.soBaoDanh})</option>
+                        ))}
+                      </datalist>
+                   </div>
+                   {candidateInfo && (
+                      <div className="mt-3 inline-flex items-center px-3 py-1 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-sm font-medium">
+                        <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                        {candidateInfo.ho} {candidateInfo.ten}
+                      </div>
+                   )}
+                </div>
+                
+                {/* TABS */}
+                <div className="flex space-x-1 mt-4 md:mt-0 bg-slate-100 p-1.5 rounded-xl w-full md:w-auto overflow-x-auto">
+                  {(['THPT', 'VSAT', 'DGNL'] as ScoreType[]).map(tab => (
+                    <button 
+                      type="button"
+                      key={tab}
+                      onClick={() => setMasterLoaiDiem(tab)}
+                      className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-all whitespace-nowrap ${masterLoaiDiem === tab ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'}`}
                     >
-                      <option value="THPT">Kết Quả THPT</option>
-                      <option value="VSAT">Kết Quả V-SAT</option>
-                      <option value="DGNL">Điểm ĐGNL</option>
-                    </select>
-                  </div>
+                      {tab === 'VSAT' ? 'V-SAT' : tab}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* VÙNG Điểm Chi Tiết Detail */}
-              <div className="mb-6">
-                <h3 className="font-semibold text-slate-700 mb-4 border-b pb-2">Bảng Điểm Môn thi (Grid Record)</h3>
-                
+              {/* 2. DETAIL GRID */}
+              <div className="mb-4">
                 {masterLoaiDiem === 'DGNL' ? (
-                  // Layout cho ĐGNL
-                  <div className="grid grid-cols-1 gap-6 max-w-sm">
+                  <div className="max-w-md mx-auto">
                     {Object.entries(mapToRender).map(([col, label]) => (
-                      <div key={col} className="bg-orange-50 border border-orange-200 p-4 rounded-lg">
-                        <label className="block text-sm font-bold text-orange-800 mb-2">{label}</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          placeholder="VD: 850"
-                          value={gridScores[col] || ''}
-                          onChange={(e) => setGridScores({ ...gridScores, [col]: e.target.value })}
-                          className="w-full px-4 py-3 border border-orange-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-500 text-lg font-bold text-orange-900"
-                        />
+                      <div key={col} className="bg-orange-50 border border-orange-200 p-6 rounded-2xl text-center">
+                         <label className="block text-sm font-bold text-orange-800 uppercase tracking-widest mb-4">{label}</label>
+                         <input
+                           type="number"
+                           step="0.01"
+                           placeholder="Tối đa 1200"
+                           value={gridScores[col] || ''}
+                           onChange={(e) => {
+                             let val = parseFloat(e.target.value);
+                             if (val > 1200) val = 1200;
+                             if (val < 0) val = 0;
+                             setGridScores({ ...gridScores, [col]: e.target.value ? val : '' });
+                           }}
+                           className="w-full max-w-[200px] text-center px-4 py-4 border-2 border-orange-300 rounded-xl focus:outline-none focus:ring-4 focus:ring-orange-500/20 focus:border-orange-500 text-3xl font-black text-orange-900 transition-all shadow-inner bg-white"
+                         />
                       </div>
                     ))}
                   </div>
                 ) : (
-                  // Layout cho THPT / VSAT
-                  <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
                     {Object.entries(mapToRender).map(([col, label]) => (
-                      <div key={col} className="flex flex-col">
-                        <label className="block text-xs font-semibold text-slate-600 mb-1">{label}</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          placeholder="---"
-                          value={gridScores[col] || ''}
-                          onChange={(e) => setGridScores({ ...gridScores, [col]: e.target.value })}
-                          className="w-full px-3 py-2 border border-slate-300 rounded focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-medium"
-                        />
-                      </div>
+                       <div key={col} className="flex flex-col">
+                         <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">{label}</label>
+                         <input 
+                           type="number" 
+                           step="0.01"
+                           value={gridScores[col] || ''}
+                           onChange={(e) => {
+                             let val = parseFloat(e.target.value);
+                             const maxLimit = masterLoaiDiem === 'VSAT' ? 150 : 10;
+                             if (val > maxLimit) val = maxLimit;
+                             if (val < 0) val = 0;
+                             setGridScores({ ...gridScores, [col]: e.target.value ? val : '' });
+                           }}
+                           className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all font-semibold text-slate-800"
+                           placeholder={masterLoaiDiem === 'VSAT' ? '0 - 150' : '0 - 10'}
+                         />
+                       </div>
                     ))}
                   </div>
                 )}
-                
               </div>
+            </div>
 
-              <div className="flex justify-end gap-3 pt-6 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors"
-                >
-                  Hủy bỏ
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow flex items-center gap-2"
-                >
-                  <SaveIcon size={18} />
-                  Cập Nhật Toàn Bộ Điểm
-                </button>
-              </div>
-            </form>
+            {/* 3. FOOTER ACTION */}
+            <div className="p-6 border-t border-slate-100 bg-slate-50 sticky bottom-0 z-10 rounded-b-2xl flex justify-end gap-3">
+               <button 
+                 onClick={() => setIsModalOpen(false)}
+                 className="px-6 py-3 font-medium text-slate-600 hover:bg-slate-200 rounded-xl transition-colors"
+               >
+                 Hủy bỏ
+               </button>
+               <button 
+                 onClick={handleSubmit}
+                 className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl font-semibold shadow-sm transition-colors flex items-center gap-2"
+               >
+                 <SaveIcon size={20} />
+                 Lưu Toàn Bộ Điểm
+               </button>
+            </div>
+
           </div>
         </div>
       )}
 
-      <ImportModal isOpen={isImportOpen} onClose={() => setIsImportOpen(false)} onImport={handleImport} columns={['CCCD', 'Họ tên', 'Loại điểm', 'Môn', 'Điểm']} title="Import điểm thí sinh" />
+      <ImportModal 
+        isOpen={isImportOpen} 
+        onClose={() => setIsImportOpen(false)} 
+        onImport={handleImport} 
+        onDownloadTemplate={handleDownloadTemplate}
+        title="Import điểm thí sinh" 
+      />
     </div>
   );
 }

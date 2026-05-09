@@ -5,6 +5,8 @@ const authMiddleware = require('../middlewares/authMiddleware');
 
 router.get('/', authMiddleware, bonusController.getAll);
 router.post('/', authMiddleware, bonusController.create);
+router.post('/import', authMiddleware, require('../middlewares/uploadMiddleware').single('file'), bonusController.importBonusPoints);
+router.post('/import-prizes', authMiddleware, require('../middlewares/uploadMiddleware').single('file'), bonusController.importPrizeBonus);
 router.put('/:id', authMiddleware, bonusController.update);
 router.delete('/:id', authMiddleware, bonusController.delete);
 

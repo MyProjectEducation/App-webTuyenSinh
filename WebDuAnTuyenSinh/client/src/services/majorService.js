@@ -16,5 +16,13 @@ export const majorService = {
     delete: async (id) => {
         const response = await api.delete(`/majors/${id}`);
         return response.data;
+    },
+    importMajors: async (formData) => {
+        const response = await api.post('/majors/import', formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data'
+            }
+        });
+        return response.data;
     }
 };

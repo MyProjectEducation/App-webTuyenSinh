@@ -9,6 +9,7 @@ router.get('/', authMiddleware, CandidateController.getAllCandidates);
 router.get('/:id', authMiddleware, CandidateController.getCandidateById);
 
 router.post('/', authMiddleware, CandidateController.create);
+router.post('/import', authMiddleware, require('../middlewares/uploadMiddleware').single('file'), CandidateController.importCandidates);
 router.put('/:id', authMiddleware, CandidateController.update);
 router.delete('/:id', authMiddleware, CandidateController.delete);
 

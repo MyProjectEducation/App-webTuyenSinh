@@ -8,9 +8,13 @@ import {
   PlusIcon,
   TrashIcon,
   EditIcon,
-  Loader2 } from
-'lucide-react';
+  UploadIcon,
+  Loader2
+} from
+  'lucide-react';
 import { convertVsatToThpt } from '../utils/vsatConversion';
+import { ImportModal } from '../components/ImportModal';
+import Pagination from '../components/Pagination';
 
 export function AdmissionProcess() {
   const {
@@ -28,6 +32,11 @@ export function AdmissionProcess() {
   } = useAppContext();
   const [diemSan, setDiemSan] = useState('18');
   const [hasRun, setHasRun] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPageResults, setCurrentPageResults] = useState(1);
+  const itemsPerPage = 10;
+
   // Preference CRUD state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPref, setEditingPref] = useState<Preference | null>(null);
@@ -54,17 +63,17 @@ export function AdmissionProcess() {
     const majorCombo = majorCombinations.find((mc) => mc.maNganh === maNganh && mc.maToHop === maToHop);
 
     if (!combo || !major) return 0;
-    
+
     // Lấy điểm
     const scores = candidateScores.filter((s) => s.cccd === cccd);
-    
+
     const getConvertedScore = (monKey?: string) => {
       if (!monKey) return 0;
       const scoreObj = scores.find((s) => s.colName === monKey);
       if (!scoreObj) return 0;
-      
+
       if (scoreObj.loaiDiem === 'VSAT') {
-          return convertVsatToThpt(monKey, scoreObj.diem);
+        return convertVsatToThpt(monKey, scoreObj.diem);
       }
       return scoreObj.diem;
     };
@@ -112,18 +121,18 @@ export function AdmissionProcess() {
     const candidatesWithPrefs = candidates.map((candidate) => {
       const cccd = candidate.cccd;
       const candidatePrefs = preferences.
-      filter((p) => p.cccd === cccd).
-      sort((a, b) => a.thuTuNV - b.thuTuNV); // Sort by preference order
-      
+        filter((p) => p.cccd === cccd).
+        sort((a, b) => a.thuTuNV - b.thuTuNV); // Sort by preference order
+
       let bestScore = 0;
       let actualBonus = 0;
       let actualTotal = 0;
 
       candidatePrefs.forEach((pref) => {
         const bonusObj = bonusPoints.find((p) => p.cccd === cccd && p.maNganh === pref.maNganh && p.maToHop === pref.maToHop);
-        
+
         // Điểm cộng tổng (đã áp trần 3.0 trong cơ sở dữ liệu)
-        const dC_30 = bonusObj?.diemC || 0; 
+        const dC_30 = bonusObj?.diemC || 0;
         const mDuT_30 = bonusObj?.diemUt || 0;
         const totalBonus = bonusObj?.diem || (dC_30 + mDuT_30);
 
@@ -131,9 +140,9 @@ export function AdmissionProcess() {
         const dxt = dthgxt_raw + totalBonus;
 
         if (dxt > actualTotal) {
-           bestScore = dthgxt_raw;
-           actualBonus = totalBonus;
-           actualTotal = dxt;
+          bestScore = dthgxt_raw;
+          actualBonus = totalBonus;
+          actualTotal = dxt;
         }
       });
       return {
@@ -220,7 +229,7 @@ export function AdmissionProcess() {
         await admissionService.delete(id);
         setPreferences(preferences.filter((p) => p.id !== id));
       } catch (err) {
-         alert("Lỗi thao tác");
+        alert("Lỗi thao tác");
       }
     }
   };
@@ -234,7 +243,7 @@ export function AdmissionProcess() {
         alert(`Thí sinh này đã có Nguyện vọng ${formData.thuTuNV}! Vui lòng chọn thứ tự khác.`);
         return;
       }
-      
+
       const isDuplicateMajor = preferences.some(p => p.cccd === formData.cccd && p.maNganh === formData.maNganh);
       if (isDuplicateMajor) {
         alert('Thí sinh này đã đăng ký ngành này rồi!');
@@ -249,13 +258,13 @@ export function AdmissionProcess() {
         });
         setPreferences(
           preferences.map((p) =>
-          p.id === editingPref.id ?
-          {
-            ...p,
-            ...formData,
-            thuTuNV: parseInt(formData.thuTuNV)
-          } :
-          p
+            p.id === editingPref.id ?
+              {
+                ...p,
+                ...formData,
+                thuTuNV: parseInt(formData.thuTuNV)
+              } :
+              p
           )
         );
       } else {
@@ -274,40 +283,80 @@ export function AdmissionProcess() {
       alert("Lỗi thao tác");
     }
   };
+
+  const fetchPreferences = async () => {
+    try {
+      const data = await admissionService.getAll();
+      setPreferences(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleImport = async (file: File) => {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const result = await admissionService.importPreferences(formData);
+      alert(result.message);
+
+      fetchPreferences();
+      setIsImportOpen(false);
+    } catch (error: any) {
+      console.error('Lỗi import:', error);
+      alert(error.response?.data?.message || 'Lỗi khi import file Excel');
+    }
+  };
+
+  const handleDownloadTemplate = () => {
+    const headers = ['CCCD', 'Thứ tự NV', 'Mã trường', 'Tên trường', 'Mã xét tuyển', 'Tên mã xét tuyển', 'Nguyện vọng tuyển thẳng(điều 8)'];
+    const sampleData = ['012345678901', '1', 'SGD', 'TRƯỜNG ĐẠI HỌC SÀI GÒN', '7140217', 'Sư phạm Ngữ văn', ''];
+    const csvContent = headers.join(',') + '\n' + sampleData.join(',');
+    const blob = new Blob(["\ufeff", csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", "Template_DanhSachNguyenVong.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const admittedCount = admissionResults.filter(
     (r) => r.trangThai === 'Đậu'
   ).length;
   const handleSaveResults = async () => {
     try {
       const payload: any[] = [];
-      
+
       // Duyệt qua tất cả nguyện vọng hệ thống đang quản lý
       preferences.forEach(p => {
-         // Tìm kết quả xét tuyển đối chiếu với nguyện vọng này
-         const result = admissionResults.find(r => r.cccd === p.cccd);
-         
-         let ketQua = 'KHONG_TRUNG_TUYEN';
-         let diemThi = 0;
-         let diemCong = 0;
-         let tongDiem = 0;
+        // Tìm kết quả xét tuyển đối chiếu với nguyện vọng này
+        const result = admissionResults.find(r => r.cccd === p.cccd);
 
-         if (result) {
-            diemThi = result.diem;
-            diemCong = result.diemCong;
-            tongDiem = result.tongDiem;
-            if (result.trangThai === 'Đậu' && result.nganhTrungTuyen === p.maNganh) {
-                ketQua = 'TRUNG_TUYEN';
-            }
-         }
-         
-         payload.push({
-             cccd: p.cccd,
-             maNganh: p.maNganh,
-             ketQua,
-             diemThi,
-             diemCong,
-             tongDiem
-         });
+        let ketQua = 'KHONG_TRUNG_TUYEN';
+        let diemThi = 0;
+        let diemCong = 0;
+        let tongDiem = 0;
+
+        if (result) {
+          diemThi = result.diem;
+          diemCong = result.diemCong;
+          tongDiem = result.tongDiem;
+          if (result.trangThai === 'Đậu' && result.nganhTrungTuyen === p.maNganh) {
+            ketQua = 'TRUNG_TUYEN';
+          }
+        }
+
+        payload.push({
+          cccd: p.cccd,
+          maNganh: p.maNganh,
+          ketQua,
+          diemThi,
+          diemCong,
+          tongDiem
+        });
       });
 
       await admissionService.saveResults(payload);
@@ -323,8 +372,8 @@ export function AdmissionProcess() {
   const handleCccdBlur = (e: React.FocusEvent<HTMLInputElement>) => {
     const val = e.target.value.trim();
     if (!val) {
-       setCccdError('');
-       return;
+      setCccdError('');
+      return;
     }
     const cand = candidates.find(c => c.cccd === val);
     if (cand) {
@@ -338,10 +387,29 @@ export function AdmissionProcess() {
 
   const availableCombos = formData.maNganh
     ? majorCombinations
-        .filter(mc => mc.maNganh === formData.maNganh)
-        .map(mc => subjectCombinations.find(c => c.maToHop === mc.maToHop))
-        .filter(Boolean)
+      .filter((mc) => mc.maNganh === formData.maNganh)
+      .map((mc) => subjectCombinations.find((c) => c.maToHop === mc.maToHop))
+      .filter(Boolean)
     : subjectCombinations;
+
+  const sortedPreferences = React.useMemo(() => {
+    return [...preferences].sort((a, b) => {
+      if (a.cccd === b.cccd) return a.thuTuNV - b.thuTuNV;
+      return a.cccd.localeCompare(b.cccd);
+    });
+  }, [preferences]);
+
+  const totalPages = Math.ceil(sortedPreferences.length / itemsPerPage);
+  const paginatedPreferences = sortedPreferences.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  const totalPagesResults = Math.ceil(admissionResults.length / itemsPerPage);
+  const paginatedResults = admissionResults.slice(
+    (currentPageResults - 1) * itemsPerPage,
+    currentPageResults * itemsPerPage
+  );
 
   return (
     <div className="p-8">
@@ -351,13 +419,13 @@ export function AdmissionProcess() {
           <p className="text-slate-600">Thực hiện xử lý điểm và kết quả qua bộ lọc nguyện vọng ưu tiên</p>
         </div>
         <div className="flex gap-4">
-            <button
-              onClick={handleSaveResults}
-              disabled={!hasRun || admissionResults.length === 0}
-              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white px-6 py-2 rounded-lg font-medium shadow transition-colors"
-            >
-              Lưu CSDL
-            </button>
+          <button
+            onClick={handleSaveResults}
+            disabled={!hasRun || admissionResults.length === 0}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white px-6 py-2 rounded-lg font-medium shadow transition-colors"
+          >
+            Lưu CSDL
+          </button>
         </div>
       </div>
 
@@ -367,21 +435,29 @@ export function AdmissionProcess() {
           <h2 className="text-lg font-semibold text-slate-800">
             Danh sách nguyện vọng
           </h2>
-          <button
-            onClick={handleAddPref}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-            
-            <PlusIcon size={18} />
-            Thêm nguyện vọng
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setIsImportOpen(true)}
+              className="flex items-center gap-2 border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              <UploadIcon size={18} />
+              Import Excel
+            </button>
+            <button
+              onClick={handleAddPref}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+              <PlusIcon size={18} />
+              Thêm nguyện vọng
+            </button>
+          </div>
         </div>
 
         <div className="overflow-x-auto max-h-96 relative min-h-[200px]">
           {isLoading ? (
-             <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-70 z-10">
-               <Loader2 className="animate-spin text-blue-600" size={32} />
-               <span className="ml-2 text-slate-600">Đang tải dữ liệu...</span>
-             </div>
+            <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-70 z-10">
+              <Loader2 className="animate-spin text-blue-600" size={32} />
+              <span className="ml-2 text-slate-600">Đang tải dữ liệu...</span>
+            </div>
           ) : null}
           <table className="w-full">
             <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
@@ -407,54 +483,61 @@ export function AdmissionProcess() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {preferences.
-              sort((a, b) => {
-                if (a.cccd === b.cccd) return a.thuTuNV - b.thuTuNV;
-                return a.cccd.localeCompare(b.cccd);
-              }).
-              map((pref) =>
-              <tr
-                key={pref.id}
-                className="hover:bg-slate-50 transition-colors">
-                
-                    <td className="px-6 py-3 text-sm text-slate-800">
-                      {pref.cccd}
-                    </td>
-                    <td className="px-6 py-3 text-sm font-medium text-slate-800">
-                      {pref.hoTen}
-                    </td>
-                    <td className="px-6 py-3 text-sm text-slate-800">
-                      <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 text-blue-800 font-bold text-xs">
-                        {pref.thuTuNV}
-                      </span>
-                    </td>
-                    <td className="px-6 py-3 text-sm text-slate-800">
-                      {pref.maNganh}
-                    </td>
-                    <td className="px-6 py-3 text-sm text-slate-800">
-                      {pref.maToHop}
-                    </td>
-                    <td className="px-6 py-3 text-sm">
-                      <div className="flex items-center gap-2">
-                        <button
-                      onClick={() => handleEditPref(pref)}
-                      className="p-1.5 text-blue-600 hover:bg-blue-50 rounded">
-                      
-                          <EditIcon size={16} />
-                        </button>
-                        <button
-                      onClick={() => handleDeletePref(pref.id)}
-                      className="p-1.5 text-red-600 hover:bg-red-50 rounded">
-                      
-                          <TrashIcon size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+              {paginatedPreferences.map((pref) =>
+                <tr
+                  key={pref.id}
+                  className="hover:bg-slate-50 transition-colors">
+
+                  <td className="px-6 py-3 text-sm text-slate-800">
+                    {pref.cccd}
+                  </td>
+                  <td className="px-6 py-3 text-sm font-medium text-slate-800">
+                    {pref.hoTen}
+                  </td>
+                  <td className="px-6 py-3 text-sm text-slate-800">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 text-blue-800 font-bold text-xs">
+                      {pref.thuTuNV}
+                    </span>
+                  </td>
+                  <td className="px-6 py-3 text-sm text-slate-800">
+                    {pref.maNganh}
+                  </td>
+                  <td className="px-6 py-3 text-sm text-slate-800">
+                    {pref.maToHop}
+                  </td>
+                  <td className="px-6 py-3 text-sm">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleEditPref(pref)}
+                        className="p-1.5 text-blue-600 hover:bg-blue-50 rounded">
+
+                        <EditIcon size={16} />
+                      </button>
+                      <button
+                        onClick={() => handleDeletePref(pref.id)}
+                        className="p-1.5 text-red-600 hover:bg-red-50 rounded">
+
+                        <TrashIcon size={16} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
         </div>
+
+        {totalPages > 1 && (
+          <div className="p-4 border-t border-slate-200">
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              totalItems={sortedPreferences.length}
+              itemsPerPage={itemsPerPage}
+            />
+          </div>
+        )}
       </div>
 
       {/* Admission Run Section */}
@@ -474,13 +557,13 @@ export function AdmissionProcess() {
               value={diemSan}
               onChange={(e) => setDiemSan(e.target.value)}
               className="w-32 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500" />
-            
+
           </div>
 
           <button
             onClick={runAdmission}
             className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-6 py-2.5 rounded-lg font-semibold transition-colors">
-            
+
             <PlayIcon size={20} />
             CHẠY XÉT TUYỂN
           </button>
@@ -489,7 +572,7 @@ export function AdmissionProcess() {
 
       {/* Results Section */}
       {hasRun &&
-      <div className="bg-white rounded-lg shadow-md border border-slate-200">
+        <div className="bg-white rounded-lg shadow-md border border-slate-200">
           <div className="p-6 border-b border-slate-200">
             <h2 className="text-lg font-semibold text-slate-800">
               Kết quả xét tuyển
@@ -528,8 +611,8 @@ export function AdmissionProcess() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {admissionResults.map((result, i) =>
-              <tr key={i} className="hover:bg-slate-50 transition-colors">
+                {paginatedResults.map((result, i) => (
+                  <tr key={i} className="hover:bg-slate-50 transition-colors">
                     <td className="px-6 py-4 text-sm text-slate-800">
                       {result.cccd}
                     </td>
@@ -550,37 +633,42 @@ export function AdmissionProcess() {
                     </td>
                     <td className="px-6 py-4 text-sm">
                       <div className="flex items-center gap-2">
-                        {result.trangThai === 'Đậu' ?
-                    <>
-                            <CheckCircleIcon
-                        className="text-green-600"
-                        size={18} />
-                      
-                            <span className="text-green-600 font-medium">
-                              Đậu
-                            </span>
-                          </> :
-
-                    <>
-                            <XCircleIcon className="text-red-600" size={18} />
-                            <span className="text-red-600 font-medium">
-                              Không đậu
-                            </span>
+                        {result.trangThai === 'Đậu' ? (
+                          <>
+                            <CheckCircleIcon className="text-green-600" size={18} />
+                            <span className="text-green-600 font-medium">Đậu</span>
                           </>
-                    }
+                        ) : (
+                          <>
+                            <XCircleIcon className="text-red-600" size={18} />
+                            <span className="text-red-600 font-medium">Không đậu</span>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
-              )}
+                ))}
               </tbody>
             </table>
           </div>
+
+          {totalPagesResults > 1 && (
+            <div className="p-4 border-t border-slate-200">
+              <Pagination
+                currentPage={currentPageResults}
+                totalPages={totalPagesResults}
+                onPageChange={setCurrentPageResults}
+                totalItems={admissionResults.length}
+                itemsPerPage={itemsPerPage}
+              />
+            </div>
+          )}
         </div>
       }
 
       {/* Preference Modal */}
       {isModalOpen &&
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
             <div className="p-6 border-b border-slate-200">
               <h2 className="text-xl font-bold text-slate-800">
@@ -595,17 +683,17 @@ export function AdmissionProcess() {
                     CCCD
                   </label>
                   <input
-                  type="text"
-                  required
-                  value={formData.cccd}
-                  onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    cccd: e.target.value
-                  })
-                  }
-                  onBlur={handleCccdBlur}
-                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 ${cccdError ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-500'}`} />
+                    type="text"
+                    required
+                    value={formData.cccd}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        cccd: e.target.value
+                      })
+                    }
+                    onBlur={handleCccdBlur}
+                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 ${cccdError ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-500'}`} />
                   {cccdError && <p className="text-xs text-red-500 mt-1">{cccdError}</p>}
                 </div>
                 <div>
@@ -613,18 +701,18 @@ export function AdmissionProcess() {
                     Họ tên
                   </label>
                   <input
-                  type="text"
-                  required
-                  readOnly
-                  value={formData.hoTen}
-                  onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    hoTen: e.target.value
-                  })
-                  }
-                  className="w-full px-3 py-2 border border-slate-300 bg-slate-50 cursor-not-allowed rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                
+                    type="text"
+                    required
+                    readOnly
+                    value={formData.hoTen}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        hoTen: e.target.value
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-slate-300 bg-slate-50 cursor-not-allowed rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+
                 </div>
               </div>
 
@@ -633,18 +721,18 @@ export function AdmissionProcess() {
                   Thứ tự nguyện vọng
                 </label>
                 <input
-                type="number"
-                min="1"
-                required
-                value={formData.thuTuNV}
-                onChange={(e) =>
-                setFormData({
-                  ...formData,
-                  thuTuNV: e.target.value
-                })
-                }
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              
+                  type="number"
+                  min="1"
+                  required
+                  value={formData.thuTuNV}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      thuTuNV: e.target.value
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+
               </div>
 
               <div className="grid grid-cols-2 gap-4 mb-6">
@@ -653,23 +741,23 @@ export function AdmissionProcess() {
                     Ngành
                   </label>
                   <select
-                  required
-                  value={formData.maNganh}
-                  onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    maNganh: e.target.value,
-                    maToHop: '' // reset toHop when Nganh changes
-                  })
-                  }
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  
+                    required
+                    value={formData.maNganh}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        maNganh: e.target.value,
+                        maToHop: '' // reset toHop when Nganh changes
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+
                     <option value="">Chọn ngành</option>
                     {majors.map((m) =>
-                  <option key={m.id} value={m.maNganh}>
+                      <option key={m.id} value={m.maNganh}>
                         {m.maNganh}
                       </option>
-                  )}
+                    )}
                   </select>
                 </div>
                 <div>
@@ -677,40 +765,40 @@ export function AdmissionProcess() {
                     Tổ hợp
                   </label>
                   <select
-                  required
-                  value={formData.maToHop}
-                  onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    maToHop: e.target.value
-                  })
-                  }
-                  disabled={!formData.maNganh}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:cursor-not-allowed">
-                  
+                    required
+                    value={formData.maToHop}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        maToHop: e.target.value
+                      })
+                    }
+                    disabled={!formData.maNganh}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:cursor-not-allowed">
+
                     <option value="">Chọn tổ hợp</option>
                     {availableCombos.map((c: any) =>
-                  <option key={c.id} value={c.maToHop}>
+                      <option key={c.id} value={c.maToHop}>
                         {c.maToHop}
                       </option>
-                  )}
+                    )}
                   </select>
                 </div>
               </div>
 
               <div className="flex justify-end gap-3">
                 <button
-                type="button"
-                onClick={() => setIsModalOpen(false)}
-                className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors">
-                
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors">
+
                   Hủy
                 </button>
                 <button
-                type="submit"
-                disabled={!!cccdError}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-lg transition-colors">
-                
+                  type="submit"
+                  disabled={!!cccdError}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-lg transition-colors">
+
                   Lưu
                 </button>
               </div>
@@ -718,6 +806,14 @@ export function AdmissionProcess() {
           </div>
         </div>
       }
+
+      <ImportModal
+        isOpen={isImportOpen}
+        onClose={() => setIsImportOpen(false)}
+        onImport={handleImport}
+        onDownloadTemplate={handleDownloadTemplate}
+        title="Import danh sách nguyện vọng xét tuyển"
+      />
     </div>);
 
 }

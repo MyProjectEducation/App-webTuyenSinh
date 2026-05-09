@@ -3,22 +3,23 @@ import { useAppContext, Candidate } from '../context/AppContext';
 import { candidateService } from '../services/candidateService';
 import { PlusIcon, EditIcon, TrashIcon, SearchIcon, UploadIcon } from 'lucide-react';
 import { ImportModal } from '../components/ImportModal';
-import { Pagination } from '../components/Pagination';
+import Pagination from '../components/Pagination';
 
 export function CandidateManagement() {
   const { candidates, setCandidates } = useAppContext();
   const [searchTerm, setSearchTerm] = useState('');
 
   // Fetch data from Node.js backend
+  const fetchCandidates = async () => {
+    try {
+      const data = await candidateService.getAllCandidates();
+      setCandidates(data);
+    } catch (error) {
+      console.error('Error fetching candidates:', error);
+    }
+  };
+
   useEffect(() => {
-    const fetchCandidates = async () => {
-      try {
-        const data = await candidateService.getAllCandidates();
-        setCandidates(data);
-      } catch (error) {
-        console.error('Error fetching candidates:', error);
-      }
-    };
     fetchCandidates();
   }, [setCandidates]);
 
@@ -45,17 +46,22 @@ export function CandidateManagement() {
 
   const [formData, setFormData] = useState(initialForm);
 
-  const filteredCandidates = candidates.filter(
-    (c) =>
+  const filteredCandidates = React.useMemo(() => {
+    if (!searchTerm) return candidates;
+    return candidates.filter((c) =>
       (c.ho + ' ' + c.ten).toLowerCase().includes(searchTerm.toLowerCase()) ||
       c.cccd.includes(searchTerm) ||
       (c.soBaoDanh && c.soBaoDanh.includes(searchTerm))
-  );
+    );
+  }, [candidates, searchTerm]);
 
-  const paginatedCandidates = filteredCandidates.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  const totalItems = filteredCandidates.length;
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
+
+  const paginatedCandidates = React.useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredCandidates.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredCandidates, currentPage]);
 
   const handleAdd = () => {
     setEditingCandidate(null);
@@ -119,24 +125,39 @@ export function CandidateManagement() {
     }
   };
 
-  const handleImport = (data: any[]) => {
-    // Basic mapping cho import
-    const newCandidates = data.map((row, index) => ({
-      id: `imported-${Date.now()}-${index}`,
-      cccd: row['CCCD'] || '',
-      soBaoDanh: row['SBD'] || '',
-      ho: row['Họ'] || '',
-      ten: row['Tên'] || '',
-      ngaySinh: row['Ngày sinh'] || '',
-      dienThoai: row['SĐT'] || '',
-      password: row['Password'] || '',
-      gioiTinh: row['Giới tính'] || 'Nam',
-      email: row['Email'] || '',
-      noiSinh: row['Nơi sinh'] || '',
-      doiTuong: row['Đối tượng'] || '',
-      khuVuc: row['Khu vực'] || ''
-    }));
-    setCandidates([...candidates, ...newCandidates]);
+  const handleImport = async (file: File) => {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const result = await candidateService.importCandidates(formData);
+      alert(result.message);
+      
+      // Refresh list
+      fetchCandidates();
+      setIsImportOpen(false);
+    } catch (error: any) {
+      console.error('Lỗi import:', error);
+      alert(error.response?.data?.message || 'Lỗi khi import file Excel');
+    }
+  };
+
+  const handleDownloadTemplate = () => {
+    // Tạo file mẫu (sử dụng xlsx nếu cần, hoặc tạo csv giả định)
+    // Ở đây ta tạo CSV đơn giản rồi tải xuống với tên file .csv
+    // Nếu muốn tải .xlsx, cần dùng thư viện xlsx trên client
+    const headers = ['CCCD', 'Số báo danh', 'Họ lót', 'Tên', 'Ngày sinh', 'Điện thoại', 'Giới tính', 'Email', 'Nơi sinh', 'Đối tượng', 'Khu vực'];
+    const sampleData = ['012345678901', 'SBD001', 'Nguyễn Văn', 'A', '2005-01-01', '0901234567', 'Nam', 'a@gmail.com', 'Hà Nội', '01', 'KV1'];
+    
+    const csvContent = headers.join(',') + '\n' + sampleData.join(',');
+    const blob = new Blob(["\ufeff", csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", "Template_ThiSinh.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
@@ -237,7 +258,8 @@ export function CandidateManagement() {
 
         <Pagination
           currentPage={currentPage}
-          totalItems={filteredCandidates.length}
+          totalPages={totalPages}
+          totalItems={totalItems}
           itemsPerPage={itemsPerPage}
           onPageChange={setCurrentPage}
         />
@@ -334,7 +356,7 @@ export function CandidateManagement() {
         isOpen={isImportOpen}
         onClose={() => setIsImportOpen(false)}
         onImport={handleImport}
-        columns={['CCCD', 'SBD', 'Họ', 'Tên']}
+        onDownloadTemplate={handleDownloadTemplate}
         title="Import danh sách thí sinh"
       />
     </div>
