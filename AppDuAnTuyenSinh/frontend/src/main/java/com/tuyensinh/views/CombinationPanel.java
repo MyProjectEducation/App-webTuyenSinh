@@ -47,19 +47,21 @@ public class CombinationPanel extends JPanel {
         toolbar.add(btnDelete);
 
         // Bảng dữ liệu theo DB schema
-        String[] columns = {"ID", "Mã tổ hợp", "Môn 1", "Môn 2", "Môn 3", "Tên tổ hợp"};
+        String[] columns = { "ID", "Mã tổ hợp", "Môn 1", "Môn 2", "Môn 3", "Tên tổ hợp" };
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
-            public boolean isCellEditable(int row, int column) { return false; }
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
         };
         table = new JTable(tableModel);
         table.setRowHeight(30);
         table.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         table.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 14));
-        
+
         DefaultTableCellRenderer centerRender = new DefaultTableCellRenderer();
         centerRender.setHorizontalAlignment(JLabel.CENTER);
-        for(int i=0; i<5; i++) {
+        for (int i = 0; i < 5; i++) {
             table.getColumnModel().getColumn(i).setCellRenderer(centerRender);
         }
         // Resize ID column
@@ -77,8 +79,8 @@ public class CombinationPanel extends JPanel {
     private void loadDataToTable() {
         tableModel.setRowCount(0);
         for (Combination c : allCombos) {
-            tableModel.addRow(new Object[]{ 
-                c.getIdtohop(), c.getMatohop(), c.getMon1(), c.getMon2(), c.getMon3(), c.getTentohop() 
+            tableModel.addRow(new Object[] {
+                    c.getIdtohop(), c.getMatohop(), c.getMon1(), c.getMon2(), c.getMon3(), c.getTentohop()
             });
         }
     }
@@ -92,20 +94,25 @@ public class CombinationPanel extends JPanel {
         JTextField txtTen = new JTextField();
 
         JPanel p = new JPanel(new GridLayout(6, 2, 10, 10));
-        p.add(new JLabel("ID Tổ hợp:")); p.add(txtId);
-        p.add(new JLabel("Mã tổ hợp:")); p.add(txtMa);
-        p.add(new JLabel("Mã môn 1:")); p.add(txtMon1);
-        p.add(new JLabel("Mã môn 2:")); p.add(txtMon2);
-        p.add(new JLabel("Mã môn 3:")); p.add(txtMon3);
-        p.add(new JLabel("Tên tổ hợp (Diễn giải):")); p.add(txtTen);
-        
+        p.add(new JLabel("ID Tổ hợp:"));
+        p.add(txtId);
+        p.add(new JLabel("Mã tổ hợp:"));
+        p.add(txtMa);
+        p.add(new JLabel("Mã môn 1:"));
+        p.add(txtMon1);
+        p.add(new JLabel("Mã môn 2:"));
+        p.add(txtMon2);
+        p.add(new JLabel("Mã môn 3:"));
+        p.add(txtMon3);
+        p.add(new JLabel("Tên tổ hợp (Diễn giải):"));
+        p.add(txtTen);
+
         int option = JOptionPane.showConfirmDialog(this, p, "Thêm Tổ Hợp (Dữ liệu mẫu)", JOptionPane.OK_CANCEL_OPTION);
-        if(option == JOptionPane.OK_OPTION) {
+        if (option == JOptionPane.OK_OPTION) {
             try {
                 Combination c = new Combination(
-                    Integer.parseInt(txtId.getText()), txtMa.getText(), txtMon1.getText(),
-                    txtMon2.getText(), txtMon3.getText(), txtTen.getText()
-                );
+                        Integer.parseInt(txtId.getText()), txtMa.getText(), txtMon1.getText(),
+                        txtMon2.getText(), txtMon3.getText(), txtTen.getText());
                 allCombos.add(c);
                 loadDataToTable();
             } catch (Exception ex) {
@@ -116,8 +123,9 @@ public class CombinationPanel extends JPanel {
 
     private void doEdit() {
         int selected = table.getSelectedRow();
-        if(selected == -1) {
-            JOptionPane.showMessageDialog(this, "Vui lòng chọn 1 tổ hợp!"); return;
+        if (selected == -1) {
+            JOptionPane.showMessageDialog(this, "Vui lòng chọn 1 tổ hợp!");
+            return;
         }
         Combination c = allCombos.get(selected);
 
@@ -129,15 +137,21 @@ public class CombinationPanel extends JPanel {
         JTextField txtTen = new JTextField(c.getTentohop());
 
         JPanel p = new JPanel(new GridLayout(6, 2, 10, 10));
-        p.add(new JLabel("ID Tổ hợp:")); p.add(txtId);
-        p.add(new JLabel("Mã tổ hợp:")); p.add(txtMa);
-        p.add(new JLabel("Mã môn 1:")); p.add(txtMon1);
-        p.add(new JLabel("Mã môn 2:")); p.add(txtMon2);
-        p.add(new JLabel("Mã môn 3:")); p.add(txtMon3);
-        p.add(new JLabel("Tên tổ hợp:")); p.add(txtTen);
-        
+        p.add(new JLabel("ID Tổ hợp:"));
+        p.add(txtId);
+        p.add(new JLabel("Mã tổ hợp:"));
+        p.add(txtMa);
+        p.add(new JLabel("Mã môn 1:"));
+        p.add(txtMon1);
+        p.add(new JLabel("Mã môn 2:"));
+        p.add(txtMon2);
+        p.add(new JLabel("Mã môn 3:"));
+        p.add(txtMon3);
+        p.add(new JLabel("Tên tổ hợp:"));
+        p.add(txtTen);
+
         int option = JOptionPane.showConfirmDialog(this, p, "Sửa Tổ Hợp", JOptionPane.OK_CANCEL_OPTION);
-        if(option == JOptionPane.OK_OPTION) {
+        if (option == JOptionPane.OK_OPTION) {
             c.setIdtohop(Integer.parseInt(txtId.getText()));
             c.setMatohop(txtMa.getText());
             c.setMon1(txtMon1.getText());
@@ -150,11 +164,14 @@ public class CombinationPanel extends JPanel {
 
     private void doDelete() {
         int[] selectedRows = table.getSelectedRows();
-        if(selectedRows.length == 0) { return; }
-        
-        int ans = JOptionPane.showConfirmDialog(this, "Xóa các tổ hợp đang chọn?", "Xác nhận", JOptionPane.YES_NO_OPTION);
-        if(ans == JOptionPane.YES_OPTION) {
-            for(int i = selectedRows.length -1; i >= 0; i--) {
+        if (selectedRows.length == 0) {
+            return;
+        }
+
+        int ans = JOptionPane.showConfirmDialog(this, "Xóa các tổ hợp đang chọn?", "Xác nhận",
+                JOptionPane.YES_NO_OPTION);
+        if (ans == JOptionPane.YES_OPTION) {
+            for (int i = selectedRows.length - 1; i >= 0; i--) {
                 allCombos.remove(selectedRows[i]);
             }
             loadDataToTable();
