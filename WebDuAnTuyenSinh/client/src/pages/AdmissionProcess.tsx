@@ -1,5 +1,14 @@
-import React, { useState } from 'react';
-import { useAppContext, AdmissionResult, Preference } from '../context/AppContext';
+import React, { useMemo, useState } from 'react';
+import {
+  useAppContext,
+  AdmissionResult,
+  Preference,
+  CandidateScore,
+  BonusPoint,
+  SubjectCombination,
+  Major,
+  MajorCombination
+} from '../context/AppContext';
 import { admissionService } from '../services/admissionService';
 import {
   PlayIcon,
@@ -15,6 +24,88 @@ import {
 import { convertVsatToThpt } from '../utils/vsatConversion';
 import { ImportModal } from '../components/ImportModal';
 import Pagination from '../components/Pagination';
+
+const CANDIDATE_CHUNK = 320;
+
+function yieldToBrowser(): Promise<void> {
+  return new Promise((r) => setTimeout(r, 0));
+}
+
+function buildAdmissionLookups(
+  candidateScores: CandidateScore[],
+  bonusPoints: BonusPoint[],
+  subjectCombinations: SubjectCombination[],
+  majors: Major[],
+  majorCombinations: MajorCombination[]
+) {
+  const comboByMaToHop = new Map(subjectCombinations.map((c) => [c.maToHop, c]));
+  const majorByMaNganh = new Map(majors.map((m) => [m.maNganh, m]));
+  const majorComboByKey = new Map(
+    majorCombinations.map((mc) => [`${mc.maNganh}|${mc.maToHop}`, mc])
+  );
+  const scoresColByCccd = new Map<string, Map<string, CandidateScore>>();
+  for (const s of candidateScores) {
+    const col = s.colName ?? s.mon;
+    if (!col) continue;
+    let byCol = scoresColByCccd.get(s.cccd);
+    if (!byCol) {
+      byCol = new Map();
+      scoresColByCccd.set(s.cccd, byCol);
+    }
+    byCol.set(col, s);
+  }
+  const bonusByKey = new Map<string, BonusPoint>();
+  for (const b of bonusPoints) {
+    const key = `${b.cccd}|${b.maNganh ?? ''}|${b.maToHop ?? ''}`;
+    bonusByKey.set(key, b);
+  }
+  return { comboByMaToHop, majorByMaNganh, majorComboByKey, scoresColByCccd, bonusByKey };
+}
+
+function calculateTotalScoreIndexed(
+  cccd: string,
+  maNganh: string,
+  maToHop: string,
+  lookups: ReturnType<typeof buildAdmissionLookups>,
+  deviationTable: Record<string, Record<string, number>>
+) {
+  const combo = lookups.comboByMaToHop.get(maToHop);
+  const major = lookups.majorByMaNganh.get(maNganh);
+  const majorCombo = lookups.majorComboByKey.get(`${maNganh}|${maToHop}`);
+
+  if (!combo || !major) return 0;
+
+  const colMap = lookups.scoresColByCccd.get(cccd);
+
+  const getConvertedScore = (monKey?: string) => {
+    if (!monKey) return 0;
+    const scoreObj = colMap?.get(monKey);
+    if (!scoreObj) return 0;
+
+    if (scoreObj.loaiDiem === 'VSAT') {
+      return convertVsatToThpt(monKey, scoreObj.diem);
+    }
+    return scoreObj.diem;
+  };
+
+  const s1 = getConvertedScore(combo.mon1);
+  const s2 = getConvertedScore(combo.mon2);
+  const s3 = getConvertedScore(combo.mon3);
+
+  const w1 = majorCombo?.hsMon1 ?? 1;
+  const w2 = majorCombo?.hsMon2 ?? 1;
+  const w3 = majorCombo?.hsMon3 ?? 1;
+  const W = w1 + w2 + w3;
+
+  const dthxt = ((s1 * w1 + s2 * w2 + s3 * w3) / W) * 3;
+
+  const toHopGoc = major.toHopGoc || 'A00';
+  let deviation = 0;
+  if (deviationTable[toHopGoc] && deviationTable[toHopGoc][maToHop] !== undefined) {
+    deviation = deviationTable[toHopGoc][maToHop];
+  }
+  return dthxt - deviation;
+}
 
 export function AdmissionProcess() {
   const {
@@ -33,6 +124,7 @@ export function AdmissionProcess() {
   const [diemSan, setDiemSan] = useState('18');
   const [hasRun, setHasRun] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [isRunningAdmission, setIsRunningAdmission] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [currentPageResults, setCurrentPageResults] = useState(1);
   const itemsPerPage = 10;
@@ -57,149 +149,145 @@ export function AdmissionProcess() {
     'D01': { 'A00': 0.68, 'A01': -0.01, 'B00': -0.53, 'C00': 3.00, 'C01': 1.62, 'D01': 0, 'D07': -0.94 }
   };
 
-  const calculateTotalScore = (cccd: string, maNganh: string, maToHop: string) => {
-    const combo = subjectCombinations.find((c) => c.maToHop === maToHop);
-    const major = majors.find((m) => m.maNganh === maNganh);
-    const majorCombo = majorCombinations.find((mc) => mc.maNganh === maNganh && mc.maToHop === maToHop);
+  const runAdmission = async () => {
+    if (isRunningAdmission) return;
+    setCurrentPageResults(1);
+    setIsRunningAdmission(true);
+    try {
+      const threshold = parseFloat(diemSan);
+      const lookups = buildAdmissionLookups(
+        candidateScores,
+        bonusPoints,
+        subjectCombinations,
+        majors,
+        majorCombinations
+      );
 
-    if (!combo || !major) return 0;
-
-    // Lấy điểm
-    const scores = candidateScores.filter((s) => s.cccd === cccd);
-
-    const getConvertedScore = (monKey?: string) => {
-      if (!monKey) return 0;
-      const scoreObj = scores.find((s) => s.colName === monKey);
-      if (!scoreObj) return 0;
-
-      if (scoreObj.loaiDiem === 'VSAT') {
-        return convertVsatToThpt(monKey, scoreObj.diem);
+      const prefsByCccd = new Map<string, Preference[]>();
+      for (const p of preferences) {
+        let list = prefsByCccd.get(p.cccd);
+        if (!list) {
+          list = [];
+          prefsByCccd.set(p.cccd, list);
+        }
+        list.push(p);
       }
-      return scoreObj.diem;
-    };
+      for (const arr of prefsByCccd.values()) {
+        arr.sort((a, b) => a.thuTuNV - b.thuTuNV);
+      }
 
-    const s1 = getConvertedScore(combo.mon1);
-    const s2 = getConvertedScore(combo.mon2);
-    const s3 = getConvertedScore(combo.mon3);
+      const candidatesWithPrefs = candidates.map((candidate) => {
+        const cccd = candidate.cccd;
+        const candidatePrefs = prefsByCccd.get(cccd) ?? [];
 
-    // Lấy trọng số
-    const w1 = majorCombo?.hsMon1 || 1;
-    const w2 = majorCombo?.hsMon2 || 1;
-    const w3 = majorCombo?.hsMon3 || 1;
-    const W = w1 + w2 + w3;
+        let bestScore = 0;
+        let actualBonus = 0;
+        let actualTotal = 0;
 
-    // ĐTHXT
-    const dthxt = ((s1 * w1 + s2 * w2 + s3 * w3) / W) * 3;
+        for (const pref of candidatePrefs) {
+          const bonusKey = `${cccd}|${pref.maNganh}|${pref.maToHop}`;
+          const bonusObj = lookups.bonusByKey.get(bonusKey);
 
-    // ĐTHGXT
-    const toHopGoc = major.toHopGoc || 'A00';
-    let deviation = 0;
-    if (DEVIATION_TABLE[toHopGoc] && DEVIATION_TABLE[toHopGoc][maToHop] !== undefined) {
-      deviation = DEVIATION_TABLE[toHopGoc][maToHop];
+          const dC_30 = bonusObj?.diemC || 0;
+          const mDuT_30 = bonusObj?.diemUt || 0;
+          const totalBonus = bonusObj?.diem ?? (dC_30 + mDuT_30);
+
+          const dthgxt_raw = calculateTotalScoreIndexed(
+            cccd,
+            pref.maNganh,
+            pref.maToHop,
+            lookups,
+            DEVIATION_TABLE
+          );
+          const dxt = dthgxt_raw + totalBonus;
+
+          if (dxt > actualTotal) {
+            bestScore = dthgxt_raw;
+            actualBonus = totalBonus;
+            actualTotal = dxt;
+          }
+        }
+        return {
+          candidate,
+          prefs: candidatePrefs,
+          baseScore: bestScore,
+          bonusScore: actualBonus,
+          totalScore: actualTotal
+        };
+      });
+
+      candidatesWithPrefs.sort((a, b) => b.totalScore - a.totalScore);
+      const sortedCandidates = candidatesWithPrefs;
+
+      const results: AdmissionResult[] = [];
+      const majorAdmissions: {
+        [key: string]: {
+          admitted: number;
+          quota: number;
+        };
+      } = {};
+      majors.forEach((major) => {
+        majorAdmissions[major.maNganh] = {
+          admitted: 0,
+          quota: major.chiTieu
+        };
+      });
+
+      const hoTenOf = (c: (typeof candidates)[number]) => {
+        const withOptional = c as typeof c & { hoTen?: string };
+        return (withOptional.hoTen && withOptional.hoTen.trim()) || `${c.ho ?? ''} ${c.ten ?? ''}`.trim();
+      };
+
+      for (let i = 0; i < sortedCandidates.length; i += CANDIDATE_CHUNK) {
+        const end = Math.min(i + CANDIDATE_CHUNK, sortedCandidates.length);
+        for (let j = i; j < end; j++) {
+          const item = sortedCandidates[j];
+          let admitted = false;
+          let admittedMajor = '';
+          if (item.totalScore < threshold) {
+            results.push({
+              candidateId: item.candidate.id,
+              cccd: item.candidate.cccd,
+              hoTen: hoTenOf(item.candidate),
+              diem: item.baseScore,
+              diemCong: item.bonusScore,
+              tongDiem: item.totalScore,
+              nganhTrungTuyen: 'Không đủ điểm sàn',
+              trangThai: 'Không đậu'
+            });
+            continue;
+          }
+          for (const pref of item.prefs) {
+            const slot = majorAdmissions[pref.maNganh];
+            const majorInfo = lookups.majorByMaNganh.get(pref.maNganh);
+            const requiredScore = majorInfo?.diemTrungTuyen || threshold;
+
+            if (slot && slot.admitted < slot.quota && item.totalScore >= requiredScore) {
+              slot.admitted++;
+              admitted = true;
+              admittedMajor = pref.maNganh;
+              break;
+            }
+          }
+          results.push({
+            candidateId: item.candidate.id,
+            cccd: item.candidate.cccd,
+            hoTen: hoTenOf(item.candidate),
+            diem: item.baseScore,
+            diemCong: item.bonusScore,
+            tongDiem: item.totalScore,
+            nganhTrungTuyen: admitted ? admittedMajor : 'Hết chỉ tiêu',
+            trangThai: admitted ? 'Đậu' : 'Không đậu'
+          });
+        }
+        await yieldToBrowser();
+      }
+
+      setAdmissionResults(results);
+      setHasRun(true);
+    } finally {
+      setIsRunningAdmission(false);
     }
-    const dthgxt = dthxt - deviation;
-
-    return dthgxt;
-  };
-
-  const runAdmission = () => {
-    const threshold = parseFloat(diemSan);
-    const results: AdmissionResult[] = [];
-    const majorAdmissions: {
-      [key: string]: {
-        admitted: number;
-        quota: number;
-      };
-    } = {};
-    majors.forEach((major) => {
-      majorAdmissions[major.maNganh] = {
-        admitted: 0,
-        quota: major.chiTieu
-      };
-    });
-    // Group preferences by candidate
-    const candidatesWithPrefs = candidates.map((candidate) => {
-      const cccd = candidate.cccd;
-      const candidatePrefs = preferences.
-        filter((p) => p.cccd === cccd).
-        sort((a, b) => a.thuTuNV - b.thuTuNV); // Sort by preference order
-
-      let bestScore = 0;
-      let actualBonus = 0;
-      let actualTotal = 0;
-
-      candidatePrefs.forEach((pref) => {
-        const bonusObj = bonusPoints.find((p) => p.cccd === cccd && p.maNganh === pref.maNganh && p.maToHop === pref.maToHop);
-
-        // Điểm cộng tổng (đã áp trần 3.0 trong cơ sở dữ liệu)
-        const dC_30 = bonusObj?.diemC || 0;
-        const mDuT_30 = bonusObj?.diemUt || 0;
-        const totalBonus = bonusObj?.diem || (dC_30 + mDuT_30);
-
-        const dthgxt_raw = calculateTotalScore(cccd, pref.maNganh, pref.maToHop); // This returns Thang 30
-        const dxt = dthgxt_raw + totalBonus;
-
-        if (dxt > actualTotal) {
-          bestScore = dthgxt_raw;
-          actualBonus = totalBonus;
-          actualTotal = dxt;
-        }
-      });
-      return {
-        candidate,
-        prefs: candidatePrefs,
-        baseScore: bestScore,
-        bonusScore: actualBonus,
-        totalScore: actualTotal
-      };
-    });
-    // Sort all candidates by total score descending
-    const sortedCandidates = candidatesWithPrefs.sort(
-      (a, b) => b.totalScore - a.totalScore
-    );
-    // Admission logic
-    sortedCandidates.forEach((item) => {
-      let admitted = false;
-      let admittedMajor = '';
-      if (item.totalScore < threshold) {
-        results.push({
-          candidateId: item.candidate.id,
-          cccd: item.candidate.cccd,
-          hoTen: item.candidate.hoTen,
-          diem: item.baseScore,
-          diemCong: item.bonusScore,
-          tongDiem: item.totalScore,
-          nganhTrungTuyen: 'Không đủ điểm sàn',
-          trangThai: 'Không đậu'
-        });
-        return;
-      }
-      // Try to admit to highest preference possible
-      for (const pref of item.prefs) {
-        const major = majorAdmissions[pref.maNganh];
-        const majorInfo = majors.find(m => m.maNganh === pref.maNganh);
-        const requiredScore = majorInfo?.diemTrungTuyen || threshold;
-
-        if (major && major.admitted < major.quota && item.totalScore >= requiredScore) {
-          major.admitted++;
-          admitted = true;
-          admittedMajor = pref.maNganh;
-          break; // Stop checking preferences once admitted
-        }
-      }
-      results.push({
-        candidateId: item.candidate.id,
-        cccd: item.candidate.cccd,
-        hoTen: item.candidate.hoTen,
-        diem: item.baseScore,
-        diemCong: item.bonusScore,
-        tongDiem: item.totalScore,
-        nganhTrungTuyen: admitted ? admittedMajor : 'Hết chỉ tiêu',
-        trangThai: admitted ? 'Đậu' : 'Không đậu'
-      });
-    });
-    setAdmissionResults(results);
-    setHasRun(true);
   };
   const handleAddPref = () => {
     setEditingPref(null);
@@ -323,9 +411,6 @@ export function AdmissionProcess() {
     document.body.removeChild(link);
   };
 
-  const admittedCount = admissionResults.filter(
-    (r) => r.trangThai === 'Đậu'
-  ).length;
   const handleSaveResults = async () => {
     try {
       const payload: any[] = [];
@@ -392,23 +477,37 @@ export function AdmissionProcess() {
       .filter(Boolean)
     : subjectCombinations;
 
-  const sortedPreferences = React.useMemo(() => {
+  const sortedPreferences = useMemo(() => {
     return [...preferences].sort((a, b) => {
       if (a.cccd === b.cccd) return a.thuTuNV - b.thuTuNV;
       return a.cccd.localeCompare(b.cccd);
     });
   }, [preferences]);
 
-  const totalPages = Math.ceil(sortedPreferences.length / itemsPerPage);
+  const admittedCount = useMemo(
+    () => admissionResults.filter((r) => r.trangThai === 'Đậu').length,
+    [admissionResults]
+  );
+
+  const totalPages = Math.ceil(sortedPreferences.length / itemsPerPage) || 1;
   const paginatedPreferences = sortedPreferences.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
 
-  const totalPagesResults = Math.ceil(admissionResults.length / itemsPerPage);
+  const totalPagesResults =
+    admissionResults.length === 0
+      ? 0
+      : Math.ceil(admissionResults.length / itemsPerPage);
+
+  const safeResultsPage =
+    admissionResults.length === 0 || totalPagesResults === 0
+      ? 1
+      : Math.min(currentPageResults, Math.max(1, totalPagesResults));
+
   const paginatedResults = admissionResults.slice(
-    (currentPageResults - 1) * itemsPerPage,
-    currentPageResults * itemsPerPage
+    (safeResultsPage - 1) * itemsPerPage,
+    safeResultsPage * itemsPerPage
   );
 
   return (
@@ -527,17 +626,15 @@ export function AdmissionProcess() {
           </table>
         </div>
 
-        {totalPages > 1 && (
-          <div className="p-4 border-t border-slate-200">
-            <Pagination
-              currentPage={currentPage}
-              totalPages={totalPages}
-              onPageChange={setCurrentPage}
-              totalItems={sortedPreferences.length}
-              itemsPerPage={itemsPerPage}
-            />
-          </div>
-        )}
+        <div className="p-4 border-t border-slate-200">
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+            totalItems={sortedPreferences.length}
+            itemsPerPage={itemsPerPage}
+          />
+        </div>
       </div>
 
       {/* Admission Run Section */}
@@ -561,11 +658,17 @@ export function AdmissionProcess() {
           </div>
 
           <button
-            onClick={runAdmission}
-            className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-6 py-2.5 rounded-lg font-semibold transition-colors">
-
-            <PlayIcon size={20} />
-            CHẠY XÉT TUYỂN
+            type="button"
+            onClick={() => runAdmission()}
+            disabled={isRunningAdmission}
+            className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-400 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded-lg font-semibold transition-colors"
+          >
+            {isRunningAdmission ? (
+              <Loader2 size={20} className="animate-spin" aria-hidden />
+            ) : (
+              <PlayIcon size={20} />
+            )}
+            {isRunningAdmission ? 'Đang xử lý...' : 'CHẠY XÉT TUYỂN'}
           </button>
         </div>
       </div>
@@ -611,8 +714,8 @@ export function AdmissionProcess() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {paginatedResults.map((result, i) => (
-                  <tr key={i} className="hover:bg-slate-50 transition-colors">
+                {paginatedResults.map((result) => (
+                  <tr key={result.candidateId} className="hover:bg-slate-50 transition-colors">
                     <td className="px-6 py-4 text-sm text-slate-800">
                       {result.cccd}
                     </td>
@@ -652,17 +755,15 @@ export function AdmissionProcess() {
             </table>
           </div>
 
-          {totalPagesResults > 1 && (
-            <div className="p-4 border-t border-slate-200">
-              <Pagination
-                currentPage={currentPageResults}
-                totalPages={totalPagesResults}
-                onPageChange={setCurrentPageResults}
-                totalItems={admissionResults.length}
-                itemsPerPage={itemsPerPage}
-              />
-            </div>
-          )}
+          <div className="p-4 border-t border-slate-200">
+            <Pagination
+              currentPage={safeResultsPage}
+              totalPages={Math.max(1, totalPagesResults)}
+              onPageChange={setCurrentPageResults}
+              totalItems={admissionResults.length}
+              itemsPerPage={itemsPerPage}
+            />
+          </div>
         </div>
       }
 
