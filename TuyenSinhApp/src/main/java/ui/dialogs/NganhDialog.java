@@ -1,5 +1,8 @@
 package ui.dialogs;
 
+import dao.NganhDAO;
+import dao.TohopMonDAO;
+import entity.Nganh;
 import ui.MainFrame;
 import ui.components.AppTheme;
 import ui.components.UIComponents;
@@ -8,23 +11,29 @@ import ui.components.UIComponents.RoundButton;
 import javax.swing.*;
 import javax.swing.border.*;
 import java.awt.*;
+import java.math.BigDecimal;
 
 public class NganhDialog extends JDialog {
 
-    private JTextField txtManganh, txtTennganh, txtNtohopgoc;
+    private JTextField txtManganh, txtTennganh;
+    private JComboBox<String> cboToHopGoc;
     private JTextField txtChitieu, txtDiemsan, txtDiemtrungtuyen;
     private JTextField txtSlXtt, txtSlDgnl, txtSlVsat, txtSlThpt;
     private JCheckBox chkThpt, chkVsat, chkDgnl, chkTuyenthang;
     private boolean isEdit;
     private String manganh;
+    private Runnable onSaved;
+    private final NganhDAO nganhDAO = new NganhDAO();
+    private final TohopMonDAO tohopMonDAO = new TohopMonDAO();
 
-    public NganhDialog(MainFrame parent, String manganh) {
+    public NganhDialog(MainFrame parent, String manganh, Runnable onSaved) {
         super(parent,
               manganh == null ? "Thêm ngành" : "Sửa ngành — " + manganh,
               java.awt.Dialog.ModalityType.APPLICATION_MODAL);
         this.manganh = manganh;
         this.isEdit  = manganh != null;
-        setSize(500, 580);
+        this.onSaved = onSaved;
+        setSize(740, 620);
         setLocationRelativeTo(parent);
         setResizable(false);
         buildUI();
@@ -62,7 +71,26 @@ public class NganhDialog extends JDialog {
 
         // manganh + n_tohopgoc
         txtManganh  = addField(body, gc, "Mã ngành *:",     0, 0, 0.5);
-        txtNtohopgoc = addField(body, gc, "Tổ hợp gốc *:",  0, 2, 0.5);
+
+        addLabel(body, gc, "Tổ hợp gốc *:", 0, 2);
+        cboToHopGoc = UIComponents.comboBox("Chọn tổ hợp");
+        loadToHopGocOptions(null);
+        JButton btnReloadToHop = new JButton("Làm mới");
+        btnReloadToHop.setFont(AppTheme.FONT_SMALL);
+        btnReloadToHop.setBackground(AppTheme.BG_SECONDARY);
+        btnReloadToHop.setForeground(AppTheme.TEXT_PRIMARY);
+        btnReloadToHop.setBorder(BorderFactory.createLineBorder(AppTheme.BORDER));
+        btnReloadToHop.setFocusPainted(false);
+        btnReloadToHop.addActionListener(e -> {
+            String current = extractMaToHop(String.valueOf(cboToHopGoc.getSelectedItem()));
+            loadToHopGocOptions(current);
+        });
+        JPanel toHopPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        toHopPanel.setOpaque(false);
+        toHopPanel.add(cboToHopGoc);
+        toHopPanel.add(btnReloadToHop);
+        gc.gridx = 3; gc.gridy = 0; gc.weightx = 0.5;
+        body.add(toHopPanel, gc);
 
         // tennganh (full width)
         addLabel(body, gc, "Tên ngành *:", 1, 0);
@@ -150,30 +178,24 @@ public class NganhDialog extends JDialog {
     }
 
     private void prefillData() {
-        // TODO: load from nganhDAO.findByManganh(manganh)
-        switch (manganh) {
-            case "7140202":
-                txtManganh.setText("7140202");
-                txtTennganh.setText("Giáo dục Tiểu học");
-                txtNtohopgoc.setText("C01");
-                txtChitieu.setText("200");
-                txtDiemsan.setText("21.00");
-                chkThpt.setSelected(true);
-                chkVsat.setSelected(true);
-                break;
-            case "7140209":
-                txtManganh.setText("7140209");
-                txtTennganh.setText("Sư phạm Toán học");
-                txtNtohopgoc.setText("A00");
-                txtChitieu.setText("40");
-                txtDiemsan.setText("24.50");
-                chkThpt.setSelected(true);
-                chkVsat.setSelected(true);
-                chkDgnl.setSelected(true);
-                break;
-            default:
-                txtManganh.setText(manganh);
-        }
+        Nganh nganh = nganhDAO.findByMaNganh(manganh);
+        if (nganh == null) return;
+
+        txtManganh.setText(nganh.getMaNganh());
+        txtTennganh.setText(nganh.getTenNganh());
+        selectToHopGoc(nganh.getToHopGoc());
+        txtChitieu.setText(toStr(nganh.getChiTieu()));
+        txtDiemsan.setText(toStr(nganh.getDiemSan()));
+        txtDiemtrungtuyen.setText(toStr(nganh.getDiemTrungTuyen()));
+        chkThpt.setSelected("1".equals(nganh.getThpt()));
+        chkVsat.setSelected("1".equals(nganh.getVsat()));
+        chkDgnl.setSelected("1".equals(nganh.getDgnl()));
+        chkTuyenthang.setSelected("1".equals(nganh.getTuyenThang()));
+        txtSlXtt.setText(toStr(nganh.getSlXtt()));
+        txtSlDgnl.setText(toStr(nganh.getSlDgnl()));
+        txtSlVsat.setText(toStr(nganh.getSlVsat()));
+        txtSlThpt.setText(toStr(nganh.getSlThpt()));
+
         txtManganh.setEditable(false);
         txtManganh.setBackground(AppTheme.BG_SECONDARY);
     }
@@ -187,38 +209,95 @@ public class NganhDialog extends JDialog {
             JOptionPane.showMessageDialog(this, "Tên ngành không được để trống!", "Lỗi", JOptionPane.ERROR_MESSAGE);
             return;
         }
+        String toHopGoc = extractMaToHop(String.valueOf(cboToHopGoc.getSelectedItem()));
+        if (!toHopGoc.isEmpty() && toHopGoc.length() > 3) {
+            JOptionPane.showMessageDialog(this,
+                "Tổ hợp gốc tối đa 3 ký tự (ví dụ: A00, D01).",
+                "Lỗi", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        try {
+            Nganh nganh = isEdit ? nganhDAO.findByMaNganh(manganh) : new Nganh();
+            if (nganh == null) nganh = new Nganh();
 
-        String info = String.format(
-            "(Demo) Lưu ngành tuyển sinh:\n" +
-            "- Mã ngành: %s\n" +
-            "- Tên ngành: %s\n" +
-            "- Tổ hợp gốc: %s\n" +
-            "- Chỉ tiêu: %s\n" +
-            "- Điểm sàn: %s\n" +
-            "- Điểm trúng tuyển: %s\n" +
-            "- Phương thức: %s%s%s%s\n" +
-            "- Chỉ tiêu học bạ: %s\n" +
-            "- Chỉ tiêu ĐGNL: %s\n" +
-            "- Chỉ tiêu V-SAT: %s\n" +
-            "- Chỉ tiêu THPT: %s",
-            txtManganh.getText(),
-            txtTennganh.getText(),
-            txtNtohopgoc.getText(),
-            txtChitieu.getText(),
-            txtDiemsan.getText(),
-            txtDiemtrungtuyen.getText(),
-            chkThpt.isSelected() ? "THPT " : "",
-            chkVsat.isSelected() ? "V-SAT " : "",
-            chkDgnl.isSelected() ? "ĐGNL " : "",
-            chkTuyenthang.isSelected() ? "Tuyển thẳng" : "",
-            txtSlXtt.getText(),
-            txtSlDgnl.getText(),
-            txtSlVsat.getText(),
-            txtSlThpt.getText()
-        );
+            nganh.setMaNganh(txtManganh.getText().trim());
+            nganh.setTenNganh(txtTennganh.getText().trim());
+            nganh.setToHopGoc(toHopGoc.isEmpty() ? null : toHopGoc.toUpperCase());
+            nganh.setChiTieu(parseInt(txtChitieu.getText()));
+            nganh.setDiemSan(parseDecimal(txtDiemsan.getText()));
+            nganh.setDiemTrungTuyen(parseDecimal(txtDiemtrungtuyen.getText()));
+            nganh.setThpt(chkThpt.isSelected() ? "1" : "0");
+            nganh.setVsat(chkVsat.isSelected() ? "1" : "0");
+            nganh.setDgnl(chkDgnl.isSelected() ? "1" : "0");
+            nganh.setTuyenThang(chkTuyenthang.isSelected() ? "1" : "0");
+            nganh.setSlXtt(parseInt(txtSlXtt.getText()));
+            nganh.setSlDgnl(parseInt(txtSlDgnl.getText()));
+            nganh.setSlVsat(parseInt(txtSlVsat.getText()));
+            nganh.setSlThpt(txtSlThpt.getText().trim());
 
-        JOptionPane.showMessageDialog(this, info, isEdit ? "Cập nhật thành công" : "Thêm thành công", JOptionPane.INFORMATION_MESSAGE);
-        dispose();
+            nganhDAO.saveOrUpdate(nganh);
+            if (onSaved != null) onSaved.run();
+            JOptionPane.showMessageDialog(this,
+                isEdit ? "Đã cập nhật ngành." : "Đã thêm ngành.",
+                "Thành công", JOptionPane.INFORMATION_MESSAGE);
+            dispose();
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this,
+                "Không thể lưu ngành. Kiểm tra dữ liệu và DB.",
+                "Lỗi", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private String toStr(Object val) {
+        return val == null ? "" : String.valueOf(val);
+    }
+
+    private void loadToHopGocOptions(String selectedMaToHop) {
+        cboToHopGoc.removeAllItems();
+        cboToHopGoc.addItem("Chọn tổ hợp");
+        try {
+            for (entity.TohopMon t : tohopMonDAO.findAll()) {
+                String label = t.getMaToHop() + " - " + t.getTenToHop();
+                cboToHopGoc.addItem(label);
+                if (selectedMaToHop != null
+                    && selectedMaToHop.equalsIgnoreCase(t.getMaToHop())) {
+                    cboToHopGoc.setSelectedItem(label);
+                }
+            }
+        } catch (Exception ex) {
+            // ignore if DB is unavailable
+        }
+    }
+
+    private void selectToHopGoc(String maToHop) {
+        if (maToHop == null || maToHop.trim().isEmpty()) return;
+        for (int i = 0; i < cboToHopGoc.getItemCount(); i++) {
+            String item = String.valueOf(cboToHopGoc.getItemAt(i));
+            if (maToHop.equalsIgnoreCase(extractMaToHop(item))) {
+                cboToHopGoc.setSelectedIndex(i);
+                return;
+            }
+        }
+    }
+
+    private String extractMaToHop(String selected) {
+        if (selected == null) return "";
+        String s = selected.trim();
+        if (s.equalsIgnoreCase("Chọn tổ hợp")) return "";
+        int idx = s.indexOf(" - ");
+        return idx > 0 ? s.substring(0, idx).trim() : s;
+    }
+
+    private Integer parseInt(String val) {
+        String v = val == null ? "" : val.trim();
+        if (v.isEmpty()) return null;
+        return Integer.parseInt(v);
+    }
+
+    private BigDecimal parseDecimal(String val) {
+        String v = val == null ? "" : val.trim();
+        if (v.isEmpty()) return null;
+        return new BigDecimal(v);
     }
 
     private JTextField addField(JPanel panel, GridBagConstraints gc,

@@ -1,6 +1,10 @@
 package ui.panels;
 
 import ui.MainFrame;
+import dao.TohopMonDAO;
+import dao.NganhDAO;
+import dao.NganhTohopDAO;
+import entity.TohopMon;
 import ui.components.AppTheme;
 import ui.components.UIComponents;
 import ui.components.UIComponents.RoundButton;
@@ -10,6 +14,8 @@ import javax.swing.border.*;
 import javax.swing.table.*;
 import java.awt.*;
 import java.awt.event.*;
+import java.util.ArrayList;
+import java.util.List;
 
 public class TohopMonPanel extends BasePanel {
 
@@ -20,23 +26,10 @@ public class TohopMonPanel extends BasePanel {
         "idtohop", "matohop", "mon1", "mon2", "mon3", "tentohop", "Hành động"
     };
 
-    private static final Object[][] DATA = {
-        {1,  "A00", "TO", "LI",  "HO",  "Toán, Vật lí, Hoá học"},
-        {2,  "A01", "TO", "LI",  "N1",  "Toán, Vật lí, Tiếng Anh"},
-        {3,  "B00", "TO", "HO",  "SI",  "Toán, Hoá học, Sinh học"},
-        {4,  "B03", "TO", "VA",  "SI",  "Toán, Văn, Sinh học"},
-        {5,  "C00", "VA", "SU",  "DI",  "Ngữ văn, Lịch sử, Địa lí"},
-        {6,  "C01", "TO", "VA",  "LI",  "Toán, Văn, Vật lí"},
-        {7,  "C03", "TO", "VA",  "SU",  "Toán, Lịch sử, Ngữ văn"},
-        {8,  "C04", "TO", "VA",  "DI",  "Toán, Địa lí, Ngữ văn"},
-        {9,  "C19", "VA", "SU",  "GD",  "Văn – Sử – GDCD"},
-        {10, "D01", "TO", "VA",  "N1",  "Toán, Tiếng Anh, Ngữ văn"},
-        {11, "H00", "VA", "NK3", "NK4", "Ngữ văn, Hình hoạ, Trang trí"},
-        {12, "M01", "NK1","NK2", "VA",  "NK1, NK2, Văn"},
-        {13, "M02", "TO", "NK1", "NK2", "Toán, Kể chuyện, Đọc diễn cảm, Hát – Nhạc"},
-        {14, "N00", "VA", "NK1", "NK2", "Ngữ văn, NK1, NK2"},
-        {15, "N01", "VA", "NK5", "NK6", "Ngữ văn, Hát – Nhạc cụ, Xướng âm – Thẩm âm, Tiết tấu"},
-    };
+    private final TohopMonDAO tohopDAO = new TohopMonDAO();
+    private final NganhDAO nganhDAO = new NganhDAO();
+    private final NganhTohopDAO nganhTohopDAO = new NganhTohopDAO();
+    private List<TohopMon> cachedData = new ArrayList<>();
 
     public TohopMonPanel(MainFrame mainFrame) {
         super(mainFrame);
@@ -60,7 +53,7 @@ public class TohopMonPanel extends BasePanel {
         };
         table = new JTable(tableModel);
         UIComponents.styleTable(table);
-        loadData();
+        reloadData();
 
         int[] widths = {55, 80, 60, 60, 60, 300, 100};
         for (int i = 0; i < widths.length && i < table.getColumnCount(); i++)
@@ -85,11 +78,27 @@ public class TohopMonPanel extends BasePanel {
         add(new JScrollPane(table), BorderLayout.CENTER);
     }
 
-    private void loadData() {
+    private void reloadData() {
+        try {
+            cachedData = tohopDAO.findAll();
+            fillTable(cachedData);
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this,
+                "Không thể tải dữ liệu tổ hợp môn. Kiểm tra DB.",
+                "Lỗi", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void fillTable(List<TohopMon> data) {
         tableModel.setRowCount(0);
-        for (Object[] row : DATA) {
+        for (TohopMon t : data) {
             Object[] r = new Object[COLUMNS.length];
-            System.arraycopy(row, 0, r, 0, row.length);
+            r[0] = t.getId();
+            r[1] = t.getMaToHop();
+            r[2] = t.getMon1();
+            r[3] = t.getMon2();
+            r[4] = t.getMon3();
+            r[5] = t.getTenToHop();
             r[COLUMNS.length - 1] = "actions";
             tableModel.addRow(r);
         }
@@ -104,23 +113,49 @@ public class TohopMonPanel extends BasePanel {
             int c = JOptionPane.showConfirmDialog(this,
                 "Xóa tổ hợp: " + tableModel.getValueAt(row, 1) + "?",
                 "Xác nhận", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-            if (c == JOptionPane.YES_OPTION) tableModel.removeRow(row);
+            if (c == JOptionPane.YES_OPTION) {
+                try {
+                    String maToHop = String.valueOf(tableModel.getValueAt(row, 1));
+                    long usedByNganh = nganhDAO.countByToHopGoc(maToHop);
+                    long usedByNganhTohop = nganhTohopDAO.countByMaToHop(maToHop);
+                    if (usedByNganh > 0 || usedByNganhTohop > 0) {
+                        JOptionPane.showMessageDialog(this,
+                            "Không thể xóa tổ hợp " + maToHop + ". "
+                                + "Đang được dùng bởi Ngành (" + usedByNganh + ") "
+                                + "và Ngành-Tổ hợp (" + usedByNganhTohop + ").\n"
+                                + "Vui lòng xóa các liên quan trước.",
+                            "Ràng buộc dữ liệu", JOptionPane.WARNING_MESSAGE);
+                        return;
+                    }
+                    Integer id = Integer.valueOf(tableModel.getValueAt(row, 0).toString());
+                    tohopDAO.deleteById(id);
+                    reloadData();
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(this,
+                        "Không thể xóa tổ hợp. Kiểm tra ràng buộc DB.",
+                        "Lỗi", JOptionPane.ERROR_MESSAGE);
+                }
+            }
         });
         menu.add(edit); menu.addSeparator(); menu.add(del);
         menu.show(table, e.getX(), e.getY());
     }
 
-    private void showAddDialog() { buildDialog("Thêm tổ hợp môn", "", "", "", "", ""); }
+    private void showAddDialog() { buildDialog("Thêm tổ hợp môn", null); }
     private void showEditDialog(int row) {
-        buildDialog("Sửa tổ hợp môn",
-            tableModel.getValueAt(row, 1).toString(),
-            tableModel.getValueAt(row, 2).toString(),
-            tableModel.getValueAt(row, 3).toString(),
-            tableModel.getValueAt(row, 4).toString(),
-            tableModel.getValueAt(row, 5).toString());
+        Integer id = Integer.valueOf(tableModel.getValueAt(row, 0).toString());
+        TohopMon tohop = tohopDAO.findById(id);
+        buildDialog("Sửa tổ hợp môn", tohop);
     }
 
-    private void buildDialog(String title, String ma, String m1, String m2, String m3, String ten) {
+    private void buildDialog(String title, TohopMon tohop) {
+        boolean isEdit = tohop != null && tohop.getId() != null;
+        String ma = isEdit ? tohop.getMaToHop() : "";
+        String m1 = isEdit ? tohop.getMon1() : "";
+        String m2 = isEdit ? tohop.getMon2() : "";
+        String m3 = isEdit ? tohop.getMon3() : "";
+        String ten = isEdit ? tohop.getTenToHop() : "";
+
         JDialog d = new JDialog(SwingUtilities.getWindowAncestor(this), title, java.awt.Dialog.ModalityType.APPLICATION_MODAL);
         d.setSize(420, 320);
         d.setLocationRelativeTo(this);
@@ -149,8 +184,22 @@ public class TohopMonPanel extends BasePanel {
         RoundButton save   = RoundButton.primary("Lưu");
         cancel.addActionListener(e -> d.dispose());
         save.addActionListener(e -> {
-            JOptionPane.showMessageDialog(d, "(Demo) Đã lưu tổ hợp môn.", "Đã lưu", JOptionPane.INFORMATION_MESSAGE);
-            d.dispose();
+            try {
+                TohopMon entity = isEdit ? tohop : new TohopMon();
+                entity.setMaToHop(fields[0].getText().trim());
+                entity.setMon1(fields[1].getText().trim());
+                entity.setMon2(fields[2].getText().trim());
+                entity.setMon3(fields[3].getText().trim());
+                entity.setTenToHop(fields[4].getText().trim());
+                tohopDAO.saveOrUpdate(entity);
+                reloadData();
+                JOptionPane.showMessageDialog(d, "Đã lưu tổ hợp môn.", "Thành công", JOptionPane.INFORMATION_MESSAGE);
+                d.dispose();
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(d,
+                    "Không thể lưu tổ hợp. Kiểm tra dữ liệu và DB.",
+                    "Lỗi", JOptionPane.ERROR_MESSAGE);
+            }
         });
         footer.add(cancel); footer.add(save);
 
