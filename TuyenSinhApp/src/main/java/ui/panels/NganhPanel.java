@@ -1,16 +1,27 @@
 package ui.panels;
 
 import ui.MainFrame;
+import dao.NganhDAO;
+import dao.NganhTohopDAO;
+import entity.Nganh;
 import ui.components.AppTheme;
 import ui.components.UIComponents;
 import ui.components.UIComponents.RoundButton;
 import ui.dialogs.NganhDialog;
+import util.ExcelSmartUtils;
 
 import javax.swing.*;
 import javax.swing.border.*;
 import javax.swing.table.*;
 import java.awt.*;
 import java.awt.event.*;
+import java.io.File;
+import java.math.BigDecimal;
+import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.Map;
+import java.util.List;
+import java.util.stream.Collectors;
 
 public class NganhPanel extends BasePanel {
 
@@ -25,24 +36,9 @@ public class NganhPanel extends BasePanel {
         "Phương thức xét tuyển", "Số NV đăng ký", "Hành động"
     };
 
-    private static final Object[][] SAMPLE_DATA = {
-        {1,  "7140114", "Quản lý giáo dục",    "D01", 40,  17.00, 22.50, "THPT, V-SAT, ĐGNL",  1860},
-        {2,  "7140201", "Giáo dục Mầm non",     "M01", 200, 20.00, 24.00, "THPT",               3210},
-        {3,  "7140202", "Giáo dục Tiểu học",    "C01", 200, 21.00, 25.00, "THPT, V-SAT",        2840},
-        {4,  "7140205", "Giáo dục Chính trị",   "C01", 40,  23.00, 26.00, "THPT",               620},
-        {5,  "7140209", "Sư phạm Toán học",     "A00", 40,  24.50, 28.00, "THPT, V-SAT, ĐGNL",  940},
-        {6,  "7140211", "Sư phạm Vật lý",       "A00", 10,  24.00, 27.00, "THPT",               240},
-        {7,  "7140212", "Sư phạm Hoá học",      "A00", 10,  24.00, 27.50, "THPT",               260},
-        {8,  "7140213", "Sư phạm Sinh học",     "B00", 10,  23.00, 26.00, "THPT",               210},
-        {9,  "7140217", "Sư phạm Ngữ văn",      "C00", 50,  24.00, 27.50, "THPT",               780},
-        {10, "7140218", "Sư phạm Lịch sử",      "C00", 25,  25.00, 27.00, "THPT",               420},
-        {11, "7140219", "Sư phạm Địa lý",       "C04", 25,  22.00, 25.00, "THPT",               390},
-        {12, "7140221", "Sư phạm Âm nhạc",      "N00", 75,  18.00, 22.00, "THPT",               310},
-        {13, "7140222", "Sư phạm Mỹ thuật",     "H00", 75,  18.00, 22.00, "THPT",               290},
-        {14, "7140231", "Sư phạm Tiếng Anh",    "D01", 120, 24.00, 28.00, "THPT, V-SAT, ĐGNL",  1460},
-        {15, "7140247", "SP Khoa học tự nhiên", "A00", 60,  22.00, 26.50, "THPT, V-SAT, ĐGNL",  880},
-        {16, "7140249", "SP Lịch sử - Địa lý",  "C04", 40,  19.00, 23.50, "THPT",               510},
-    };
+    private final NganhDAO nganhDAO = new NganhDAO();
+    private final NganhTohopDAO nganhTohopDAO = new NganhTohopDAO();
+    private List<Nganh> cachedData = new ArrayList<>();
 
     public NganhPanel(MainFrame mainFrame) {
         super(mainFrame);
@@ -53,7 +49,7 @@ public class NganhPanel extends BasePanel {
         RoundButton btnImport = RoundButton.secondary("Import Excel");
         RoundButton btnAdd    = RoundButton.primary("+ Thêm ngành");
         btnImport.addActionListener(e -> showImportDialog());
-        btnAdd.addActionListener(e -> new NganhDialog(mainFrame, null).setVisible(true));
+        btnAdd.addActionListener(e -> new NganhDialog(mainFrame, null, this::reloadData).setVisible(true));
 
         JPanel topBar = buildTopBar(
             "Ngành tuyển sinh",
@@ -80,7 +76,7 @@ public class NganhPanel extends BasePanel {
         };
         table = new JTable(tableModel);
         UIComponents.styleTable(table);
-        loadData();
+        reloadData();
 
         // Column widths
         int[] widths = {45, 85, 190, 80, 70, 80, 95, 150, 110, 90};
@@ -117,31 +113,92 @@ public class NganhPanel extends BasePanel {
         add(center, BorderLayout.CENTER);
     }
 
-    private void loadData() {
+    private void reloadData() {
+        try {
+            cachedData = nganhDAO.findAll();
+            fillTable(cachedData);
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this,
+                "Không thể tải dữ liệu ngành. Kiểm tra kết nối DB.",
+                "Lỗi", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void fillTable(List<Nganh> data) {
         tableModel.setRowCount(0);
-        for (Object[] row : SAMPLE_DATA) {
+        for (Nganh nganh : data) {
             Object[] r = new Object[COLUMNS.length];
-            System.arraycopy(row, 0, r, 0, Math.min(row.length, COLUMNS.length - 1));
-            r[COLUMNS.length - 1] = "actions";
+            r[0] = nganh.getId();
+            r[1] = nganh.getMaNganh();
+            r[2] = nganh.getTenNganh();
+            r[3] = nganh.getToHopGoc();
+            r[4] = nganh.getChiTieu();
+            r[5] = nganh.getDiemSan();
+            r[6] = nganh.getDiemTrungTuyen();
+            r[7] = buildPhuongThucText(nganh);
+            r[8] = 0;
+            r[9] = "actions";
             tableModel.addRow(r);
         }
     }
 
+    private String buildPhuongThucText(Nganh n) {
+        List<String> parts = new ArrayList<>();
+        if ("1".equals(n.getThpt())) parts.add("THPT");
+        if ("1".equals(n.getVsat())) parts.add("V-SAT");
+        if ("1".equals(n.getDgnl())) parts.add("ĐGNL");
+        if ("1".equals(n.getTuyenThang())) parts.add("Tuyển thẳng");
+        return parts.isEmpty() ? "—" : String.join(", ", parts);
+    }
+
     private void doSearch() {
-        JOptionPane.showMessageDialog(this,
-            "(Demo) Tìm theo mã ngành/tên ngành và phương thức đã chọn.",
-            "Tìm kiếm", JOptionPane.INFORMATION_MESSAGE);
+        String keyword = txtSearch.getText().trim().toLowerCase();
+        String method = String.valueOf(cboPhuongThuc.getSelectedItem());
+
+        List<Nganh> filtered = cachedData.stream()
+            .filter(n -> keyword.isEmpty()
+                || (n.getMaNganh() != null && n.getMaNganh().toLowerCase().contains(keyword))
+                || (n.getTenNganh() != null && n.getTenNganh().toLowerCase().contains(keyword)))
+            .filter(n -> "Tất cả phương thức".equals(method)
+                || ("THPT".equals(method) && "1".equals(n.getThpt()))
+                || ("V-SAT".equals(method) && "1".equals(n.getVsat()))
+                || ("ĐGNL".equals(method) && "1".equals(n.getDgnl())))
+            .collect(Collectors.toList());
+
+        fillTable(filtered);
     }
 
     private void handleAction(int row, MouseEvent e) {
         JPopupMenu menu = new JPopupMenu();
         JMenuItem edit = new JMenuItem("✏ Sửa ngành");
         JMenuItem del  = new JMenuItem("🗑 Xóa ngành");
-        edit.addActionListener(ev -> new NganhDialog(mainFrame, tableModel.getValueAt(row, 1).toString()).setVisible(true));
+        edit.addActionListener(ev -> new NganhDialog(mainFrame,
+            tableModel.getValueAt(row, 1).toString(),
+            this::reloadData).setVisible(true));
         del.addActionListener(ev -> {
             int c = JOptionPane.showConfirmDialog(this, "Xóa ngành: " + tableModel.getValueAt(row, 2) + "?",
                 "Xác nhận", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-            if (c == JOptionPane.YES_OPTION) tableModel.removeRow(row);
+            if (c == JOptionPane.YES_OPTION) {
+                try {
+                    String maNganh = String.valueOf(tableModel.getValueAt(row, 1));
+                    long usedByNganhTohop = nganhTohopDAO.countByMaNganh(maNganh);
+                    if (usedByNganhTohop > 0) {
+                        JOptionPane.showMessageDialog(this,
+                            "Không thể xóa ngành " + maNganh + ". "
+                                + "Đang được dùng bởi Ngành-Tổ hợp (" + usedByNganhTohop + ").\n"
+                                + "Vui lòng xóa các liên quan trước.",
+                            "Ràng buộc dữ liệu", JOptionPane.WARNING_MESSAGE);
+                        return;
+                    }
+                    Integer id = Integer.valueOf(tableModel.getValueAt(row, 0).toString());
+                    nganhDAO.deleteById(id);
+                    reloadData();
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(this,
+                        "Không thể xóa ngành. Kiểm tra ràng buộc DB.",
+                        "Lỗi", JOptionPane.ERROR_MESSAGE);
+                }
+            }
         });
         menu.add(edit);
         menu.addSeparator();
@@ -152,11 +209,154 @@ public class NganhPanel extends BasePanel {
     private void showImportDialog() {
         JFileChooser fc = new JFileChooser();
         fc.setDialogTitle("Import Excel — Ngành tuyển sinh");
-        fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("Excel (*.xlsx)", "xlsx", "xls"));
+        fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("Excel (*.xlsx, *.xls)", "xlsx", "xls"));
         if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            JOptionPane.showMessageDialog(this, "(Demo) Sẽ import danh sách ngành từ file đã chọn.",
-                "Import ngành", JOptionPane.INFORMATION_MESSAGE);
+            importFromExcel(fc.getSelectedFile());
         }
+    }
+
+    private void importFromExcel(File file) {
+        try {
+            Map<String, String> mapping = new HashMap<>();
+            mapping.put("mactdt", "manganh");
+            mapping.put("maxettuyen", "manganh");
+            mapping.put("manganh", "manganh");
+            mapping.put("manganhdaotao", "manganh");
+            mapping.put("machuongtrinhdaotao", "manganh");
+            mapping.put("tenctdt", "tennganh");
+            mapping.put("tennganh", "tennganh");
+            mapping.put("tennganhchuan", "tennganh");
+            mapping.put("tohopgoc", "n_tohopgoc");
+            mapping.put("tentohop", "tohopmon");
+            mapping.put("matohop", "tohopmon");
+            mapping.put("tohopmon", "tohopmon");
+            mapping.put("tohop", "tohopmon");
+            mapping.put("goc", "is_goc");
+            mapping.put("chitieuchot", "n_chitieu");
+            mapping.put("chitieu", "n_chitieu");
+            mapping.put("nguongdauvao", "n_diemsan");
+            mapping.put("diemsan", "n_diemsan");
+            mapping.put("diemchuan", "n_diemtrungtuyen");
+            mapping.put("diemtrungtuyen", "n_diemtrungtuyen");
+            mapping.put("tuyenthang", "n_tuyenthang");
+            mapping.put("xettuyenthang", "n_tuyenthang");
+            mapping.put("dgnl", "n_dgnl");
+            mapping.put("diemdgnl", "n_dgnl");
+            mapping.put("thpt", "n_thpt");
+            mapping.put("diemthpt", "n_thpt");
+            mapping.put("vsat", "n_vsat");
+            mapping.put("diemvsat", "n_vsat");
+            mapping.put("sltuyenthang", "sl_xtt");
+            mapping.put("slxtt", "sl_xtt");
+            mapping.put("sldgnl", "sl_dgnl");
+            mapping.put("slvsat", "sl_vsat");
+            mapping.put("slthpt", "sl_thpt");
+
+            List<Map<String, String>> rows = ExcelSmartUtils.smartScan(file, mapping);
+            if (rows.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "Không tìm thấy dữ liệu hợp lệ trong file Excel.",
+                    "Import ngành", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+
+            int success = 0;
+            for (Map<String, String> data : rows) {
+                if (data.containsKey("tohopmon")) {
+                    boolean isGoc = isTruthy(data.get("is_goc"));
+                    if (isGoc) {
+                        data.put("n_tohopgoc", data.get("tohopmon"));
+                    }
+                }
+
+                String ma = val(data, "manganh");
+                if (ma.isEmpty()) continue;
+
+                Nganh nganh = nganhDAO.findByMaNganh(ma);
+                boolean isUpdate = nganh != null;
+                if (nganh == null) nganh = new Nganh();
+
+                nganh.setMaNganh(ma);
+                if (!isUpdate) {
+                    nganh.setTenNganh(val(data, "tennganh"));
+                }
+                if (hasValue(data, "tennganh")) nganh.setTenNganh(val(data, "tennganh"));
+                if (hasValue(data, "n_tohopgoc")) nganh.setToHopGoc(val(data, "n_tohopgoc"));
+                if (hasValue(data, "n_chitieu")) nganh.setChiTieu(parseInt(val(data, "n_chitieu"), 0));
+                if (hasValue(data, "n_diemsan")) nganh.setDiemSan(parseDecimal(val(data, "n_diemsan")));
+                if (hasValue(data, "n_diemtrungtuyen")) nganh.setDiemTrungTuyen(parseDecimal(val(data, "n_diemtrungtuyen")));
+                if (hasValue(data, "n_tuyenthang")) nganh.setTuyenThang(parseFlag(val(data, "n_tuyenthang")));
+                if (hasValue(data, "n_dgnl")) nganh.setDgnl(parseFlag(val(data, "n_dgnl")));
+                if (hasValue(data, "n_thpt")) nganh.setThpt(parseFlag(val(data, "n_thpt")));
+                if (hasValue(data, "n_vsat")) nganh.setVsat(parseFlag(val(data, "n_vsat")));
+                if (hasValue(data, "sl_xtt")) nganh.setSlXtt(parseInt(val(data, "sl_xtt"), 0));
+                if (hasValue(data, "sl_dgnl")) nganh.setSlDgnl(parseInt(val(data, "sl_dgnl"), 0));
+                if (hasValue(data, "sl_vsat")) nganh.setSlVsat(parseInt(val(data, "sl_vsat"), 0));
+                if (hasValue(data, "sl_thpt")) nganh.setSlThpt(val(data, "sl_thpt"));
+
+                if (!isUpdate) {
+                    if (nganh.getTenNganh() == null) nganh.setTenNganh("");
+                    if (nganh.getTuyenThang() == null) nganh.setTuyenThang("0");
+                    if (nganh.getDgnl() == null) nganh.setDgnl("0");
+                    if (nganh.getThpt() == null) nganh.setThpt("0");
+                    if (nganh.getVsat() == null) nganh.setVsat("0");
+                    if (nganh.getChiTieu() == null) nganh.setChiTieu(0);
+                    if (nganh.getSlXtt() == null) nganh.setSlXtt(0);
+                    if (nganh.getSlDgnl() == null) nganh.setSlDgnl(0);
+                    if (nganh.getSlVsat() == null) nganh.setSlVsat(0);
+                    if (nganh.getSlThpt() == null) nganh.setSlThpt("0");
+                }
+
+                nganhDAO.saveOrUpdate(nganh);
+                success++;
+            }
+
+            reloadData();
+            JOptionPane.showMessageDialog(this,
+                "Import thành công! Đã thêm/cập nhật " + success + " ngành.",
+                "Import ngành", JOptionPane.INFORMATION_MESSAGE);
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this,
+                "Không thể import Excel. Kiểm tra định dạng file.",
+                "Import ngành", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private String val(Map<String, String> data, String key) {
+        String v = data.get(key);
+        return v == null ? "" : v.trim();
+    }
+
+    private boolean hasValue(Map<String, String> data, String key) {
+        String v = data.get(key);
+        return v != null && !v.trim().isEmpty();
+    }
+
+    private Integer parseInt(String val, int fallback) {
+        try {
+            return Integer.parseInt(val.trim());
+        } catch (Exception ex) {
+            return fallback;
+        }
+    }
+
+    private BigDecimal parseDecimal(String val) {
+        try {
+            return new BigDecimal(val.trim());
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private boolean isTruthy(String val) {
+        if (val == null) return false;
+        String v = val.trim().toLowerCase();
+        return v.equals("x") || v.equals("1") || v.equals("co") || v.equals("có")
+            || v.equals("true") || v.equals("v") || v.equals("yes") || v.equals("y")
+            || v.equals("+") || v.equals("goc") || v.equals("gốc");
+    }
+
+    private String parseFlag(String val) {
+        return isTruthy(val) ? "1" : "0";
     }
 
     static class ActionRenderer extends DefaultTableCellRenderer {
