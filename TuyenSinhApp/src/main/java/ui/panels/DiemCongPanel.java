@@ -194,7 +194,7 @@ public class DiemCongPanel extends BasePanel {
         JDialog d = new JDialog(SwingUtilities.getWindowAncestor(this),
             isEdit ? "Sửa điểm cộng" : "Thêm điểm cộng",
             java.awt.Dialog.ModalityType.APPLICATION_MODAL);
-        d.setSize(480, 420);
+        d.setSize(480, 460);
         d.setLocationRelativeTo(this);
 
         JPanel body = new JPanel(new GridBagLayout());
@@ -224,7 +224,11 @@ public class DiemCongPanel extends BasePanel {
             body.add(tfs[i], gc);
         }
 
-        JLabel hint = new JLabel("  Để trống dc_keys → tự tạo CCCD_mãNgành_mãTổHợp. Để trống Điểm tổng → CC + ƯTXT (+ điểm thưởng nếu có khi sửa).");
+        // JLabel hint = new JLabel("  Để trống dc_keys → tự tạo CCCD_mãNgành_mãTổHợp. Để trống Điểm tổng → CC + ƯTXT (+ điểm thưởng nếu có khi sửa).");
+        JLabel hint = new JLabel("<html><body style='width: 350px'>" 
+            + "Để trống <b>dc_keys</b> → tự tạo CCCD_mãNgành_mãTổHợp.<br>"
+            + "Để trống <b>Điểm tổng</b> → CC + ƯTXT (+ điểm thưởng nếu có khi sửa)."
+            + "</body></html>");
         hint.setFont(AppTheme.FONT_SMALL);
         hint.setForeground(AppTheme.TEXT_SECOND);
         gc.gridx = 0; gc.gridy = fields.length; gc.gridwidth = 2;
