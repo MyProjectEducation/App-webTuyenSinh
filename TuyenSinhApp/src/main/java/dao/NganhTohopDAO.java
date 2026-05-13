@@ -20,6 +20,20 @@ public class NganhTohopDAO {
         }
     }
 
+    public NganhTohop findByMaNganhAndMaToHop(String maNganh, String maToHop) {
+        if (maNganh == null || maNganh.trim().isEmpty()) return null;
+        if (maToHop == null || maToHop.trim().isEmpty()) return null;
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from NganhTohop where lower(maNganh) = :mn and lower(maToHop) = :mt",
+                    NganhTohop.class)
+                .setParameter("mn", maNganh.trim().toLowerCase())
+                .setParameter("mt", maToHop.trim().toLowerCase())
+                .setMaxResults(1)
+                .uniqueResult();
+        }
+    }
+
     public void saveOrUpdate(NganhTohop nganhTohop) {
         Transaction tx = null;
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {

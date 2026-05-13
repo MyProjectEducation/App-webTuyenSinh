@@ -8,13 +8,17 @@ import entity.TohopMon;
 import ui.components.AppTheme;
 import ui.components.UIComponents;
 import ui.components.UIComponents.RoundButton;
+import util.ExcelSmartUtils;
 
 import javax.swing.*;
 import javax.swing.border.*;
 import javax.swing.table.*;
 import java.awt.*;
 import java.awt.event.*;
+import java.io.File;
+import java.util.HashMap;
 import java.util.ArrayList;
+import java.util.Map;
 import java.util.List;
 
 public class TohopMonPanel extends BasePanel {
@@ -211,10 +215,135 @@ public class TohopMonPanel extends BasePanel {
 
     private void showImport() {
         JFileChooser fc = new JFileChooser();
-        fc.setDialogTitle("Import — Tổ hợp môn");
-        fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("Excel (*.xlsx)", "xlsx","xls"));
+        fc.setDialogTitle("Import Excel — Tổ hợp môn");
+        fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("Excel (*.xlsx, *.xls)", "xlsx", "xls"));
         if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION)
-            JOptionPane.showMessageDialog(this, "(Demo) Sẽ import danh sách tổ hợp môn.", "Import", JOptionPane.INFORMATION_MESSAGE);
+            importFromExcel(fc.getSelectedFile());
+    }
+
+    private void importFromExcel(File file) {
+        try {
+            Map<String, String> mapping = new HashMap<>();
+            mapping.put("matohop", "chuoi_tohop");
+            mapping.put("tentohop", "matohop");
+            mapping.put("tohop", "matohop");
+            mapping.put("mon1", "mon1");
+            mapping.put("mon2", "mon2");
+            mapping.put("mon3", "mon3");
+            mapping.put("ten", "tentohop");
+
+            List<Map<String, String>> rows = ExcelSmartUtils.smartScan(file, mapping);
+            if (rows.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "Không tìm thấy dữ liệu hợp lệ trong file Excel.",
+                    "Import tổ hợp", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+
+            Map<String, TohopMon> comboMap = new HashMap<>();
+            Map<String, String> subjectNames = subjectNameMap();
+
+            for (Map<String, String> comboData : rows) {
+                String maToHop = comboData.get("matohop");
+                String m1 = comboData.get("mon1");
+                String m2 = comboData.get("mon2");
+                String m3 = comboData.get("mon3");
+
+                String chuoi = comboData.get("chuoi_tohop");
+                if (chuoi != null && !chuoi.trim().isEmpty()) {
+                    if (maToHop == null || maToHop.trim().isEmpty()) {
+                        maToHop = chuoi.split("\\(")[0].trim();
+                    }
+                    int open = chuoi.indexOf('(');
+                    int close = chuoi.indexOf(')');
+                    if (open >= 0 && close > open) {
+                        String inside = chuoi.substring(open + 1, close);
+                        String[] parts = inside.split(",");
+                        if ((m1 == null || m1.isEmpty()) && parts.length > 0) m1 = parts[0].split("-")[0].trim();
+                        if ((m2 == null || m2.isEmpty()) && parts.length > 1) m2 = parts[1].split("-")[0].trim();
+                        if ((m3 == null || m3.isEmpty()) && parts.length > 2) m3 = parts[2].split("-")[0].trim();
+                    }
+                }
+
+                if (maToHop == null || maToHop.trim().isEmpty() || m1 == null || m1.trim().isEmpty()) {
+                    continue;
+                }
+
+                String ten = comboData.get("tentohop");
+                if (ten == null || ten.trim().isEmpty()) {
+                    String t1 = subjectNames.getOrDefault(m1, m1);
+                    String t2 = m2 == null || m2.isEmpty() ? "" : subjectNames.getOrDefault(m2, m2);
+                    String t3 = m3 == null || m3.isEmpty() ? "" : subjectNames.getOrDefault(m3, m3);
+                    StringBuilder sb = new StringBuilder();
+                    sb.append(t1);
+                    if (!t2.isEmpty()) sb.append(", ").append(t2);
+                    if (!t3.isEmpty()) sb.append(", ").append(t3);
+                    ten = sb.toString();
+                }
+
+                TohopMon entity = comboMap.get(maToHop);
+                if (entity == null) {
+                    entity = new TohopMon();
+                    entity.setMaToHop(maToHop);
+                    comboMap.put(maToHop, entity);
+                }
+                entity.setMon1(m1);
+                if (m2 != null && !m2.isEmpty()) entity.setMon2(m2);
+                if (m3 != null && !m3.isEmpty()) entity.setMon3(m3);
+                if (ten != null && !ten.isEmpty()) entity.setTenToHop(ten);
+            }
+
+            int success = 0;
+            for (TohopMon t : comboMap.values()) {
+                TohopMon existing = tohopDAO.findByMaToHop(t.getMaToHop());
+                if (existing != null) {
+                    if (t.getMon1() != null) existing.setMon1(t.getMon1());
+                    if (t.getMon2() != null) existing.setMon2(t.getMon2());
+                    if (t.getMon3() != null) existing.setMon3(t.getMon3());
+                    if (t.getTenToHop() != null) existing.setTenToHop(t.getTenToHop());
+                    tohopDAO.saveOrUpdate(existing);
+                } else {
+                    if (t.getMon2() == null) t.setMon2("");
+                    if (t.getMon3() == null) t.setMon3("");
+                    tohopDAO.saveOrUpdate(t);
+                }
+                success++;
+            }
+
+            reloadData();
+            JOptionPane.showMessageDialog(this,
+                "Import thành công! Đã thêm/cập nhật " + success + " tổ hợp môn.",
+                "Import tổ hợp", JOptionPane.INFORMATION_MESSAGE);
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this,
+                "Không thể import Excel. Kiểm tra định dạng file.",
+                "Import tổ hợp", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private Map<String, String> subjectNameMap() {
+        Map<String, String> map = new HashMap<>();
+        map.put("TO", "Toan");
+        map.put("VA", "Ngu van");
+        map.put("LI", "Vat ly");
+        map.put("HO", "Hoa hoc");
+        map.put("SI", "Sinh hoc");
+        map.put("SU", "Lich su");
+        map.put("DI", "Dia ly");
+        map.put("N1", "Tieng Anh");
+        map.put("N2", "Tieng Nga");
+        map.put("N3", "Tieng Phap");
+        map.put("N4", "Tieng Trung");
+        map.put("N5", "Tieng Duc");
+        map.put("N6", "Tieng Nhat");
+        map.put("N7", "Tieng Han");
+        map.put("KTPL", "Giao duc KT va PL");
+        map.put("TI", "Tin hoc");
+        map.put("CNCN", "Cong nghe (Cong nghiep)");
+        map.put("CNNN", "Cong nghe (Nong nghiep)");
+        map.put("GDCD", "GDCD");
+        map.put("NK1", "Nang khieu 1");
+        map.put("NK2", "Nang khieu 2");
+        return map;
     }
 
     static class ActionRenderer extends DefaultTableCellRenderer {

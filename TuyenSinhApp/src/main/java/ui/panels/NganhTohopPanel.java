@@ -9,15 +9,19 @@ import ui.MainFrame;
 import ui.components.AppTheme;
 import ui.components.UIComponents;
 import ui.components.UIComponents.RoundButton;
+import util.ExcelSmartUtils;
 
 import javax.swing.*;
 import javax.swing.border.*;
 import javax.swing.table.*;
 import java.awt.*;
 import java.awt.event.*;
+import java.io.File;
 import java.util.ArrayList;
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 public class NganhTohopPanel extends BasePanel {
@@ -305,10 +309,134 @@ public class NganhTohopPanel extends BasePanel {
 
     private void showImport() {
         JFileChooser fc = new JFileChooser();
-        fc.setDialogTitle("Import — Ngành và tổ hợp môn");
-        fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("Excel (*.xlsx)", "xlsx","xls"));
+        fc.setDialogTitle("Import Excel — Ngành và tổ hợp môn");
+        fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("Excel (*.xlsx, *.xls)", "xlsx", "xls"));
         if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION)
-            JOptionPane.showMessageDialog(this, "(Demo) Sẽ import danh sách ngành - tổ hợp.", "Import", JOptionPane.INFORMATION_MESSAGE);
+            importFromExcel(fc.getSelectedFile());
+    }
+
+    private void importFromExcel(File file) {
+        try {
+            Map<String, String> mapping = new HashMap<>();
+            mapping.put("manganh", "manganh");
+            mapping.put("matohop", "matohop");
+            mapping.put("goc", "is_goc");
+            mapping.put("tohopgoc", "is_goc");
+
+            List<Map<String, String>> rows = ExcelSmartUtils.smartScan(file, mapping);
+            if (rows.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "Không tìm thấy dữ liệu hợp lệ trong file Excel.",
+                    "Import ngành-tổ hợp", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+
+            Map<String, String> nganhMap = new HashMap<>();
+            for (Nganh n : nganhDAO.findAll()) {
+                nganhMap.put(n.getMaNganh(), n.getToHopGoc());
+            }
+
+            int success = 0;
+            for (Map<String, String> data : rows) {
+                String maNganh = val(data, "manganh");
+                String rawMaToHop = val(data, "matohop");
+                if (maNganh.isEmpty() || rawMaToHop.isEmpty()) continue;
+
+                String maToHop = rawMaToHop.split("\\(")[0].trim();
+                if (maToHop.isEmpty()) continue;
+
+                boolean isGoc = isTruthy(data.get("is_goc"));
+                if (isGoc) {
+                    Nganh nganh = nganhDAO.findByMaNganh(maNganh);
+                    if (nganh != null) {
+                        nganh.setToHopGoc(maToHop);
+                        nganhDAO.saveOrUpdate(nganh);
+                        nganhMap.put(maNganh, maToHop);
+                    }
+                }
+
+                BigDecimal doLech = BigDecimal.ZERO;
+                String toHopGoc = nganhMap.get(maNganh);
+                if (toHopGoc != null && !toHopGoc.equalsIgnoreCase(maToHop)) {
+                    BigDecimal mapped = getDoLech(toHopGoc, maToHop);
+                    if (mapped != null) doLech = mapped;
+                }
+
+                entity.TohopMon tohop = tohopMonDAO.findByMaToHop(maToHop);
+                String mon1 = tohop != null ? tohop.getMon1() : null;
+                String mon2 = tohop != null ? tohop.getMon2() : null;
+                String mon3 = tohop != null ? tohop.getMon3() : null;
+
+                NganhTohop entity = nganhTohopDAO.findByMaNganhAndMaToHop(maNganh, maToHop);
+                if (entity == null) entity = new NganhTohop();
+
+                entity.setMaNganh(maNganh);
+                entity.setMaToHop(maToHop);
+                entity.setMon1(mon1);
+                entity.setMon2(mon2);
+                entity.setMon3(mon3);
+                if (entity.getHeSo1() == null) entity.setHeSo1((byte) 3);
+                if (entity.getHeSo2() == null) entity.setHeSo2((byte) 3);
+                if (entity.getHeSo3() == null) entity.setHeSo3((byte) 1);
+                entity.setDoLech(doLech);
+                entity.setToHopKey(maNganh + "_" + maToHop);
+                applySubjectFlags(entity);
+
+                nganhTohopDAO.saveOrUpdate(entity);
+                success++;
+            }
+
+            reloadData();
+            JOptionPane.showMessageDialog(this,
+                "Import thành công! Đã xử lý " + success + " liên kết ngành - tổ hợp.",
+                "Import ngành-tổ hợp", JOptionPane.INFORMATION_MESSAGE);
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this,
+                "Không thể import Excel. Kiểm tra định dạng file.",
+                "Import ngành-tổ hợp", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private BigDecimal getDoLech(String toHopGoc, String maToHop) {
+        Map<String, Map<String, BigDecimal>> matrix = deviationMatrix();
+        Map<String, BigDecimal> row = matrix.get(toHopGoc);
+        if (row == null) return null;
+        return row.get(maToHop);
+    }
+
+    private Map<String, Map<String, BigDecimal>> deviationMatrix() {
+        Map<String, Map<String, BigDecimal>> m = new HashMap<>();
+        m.put("A00", mapRow(new String[]{"A00","A01","B00","C00","C01","D01","D07"}, new double[]{0,-0.69,-1.21,2.32,0.94,-0.68,-1.62}));
+        m.put("A01", mapRow(new String[]{"A00","A01","B00","C00","C01","D01","D07"}, new double[]{0.69,0,-0.52,3.01,1.63,0.01,-0.93}));
+        m.put("B00", mapRow(new String[]{"A00","A01","B00","C00","C01","D01","D07"}, new double[]{1.21,0.52,0,3.53,2.15,0.53,-0.41}));
+        m.put("C00", mapRow(new String[]{"A00","A01","B00","C00","C01","D01","D07"}, new double[]{-2.32,-3.01,-3.53,0,1.38,-3.00,-3.94}));
+        m.put("C01", mapRow(new String[]{"A00","A01","B00","C00","C01","D01","D07"}, new double[]{-0.94,-1.63,-2.15,1.38,0,-1.62,-2.56}));
+        m.put("D01", mapRow(new String[]{"A00","A01","B00","C00","C01","D01","D07"}, new double[]{0.68,-0.01,-0.53,3.00,1.62,0,-0.94}));
+        return m;
+    }
+
+    private Map<String, BigDecimal> mapRow(String[] keys, double[] values) {
+        Map<String, BigDecimal> row = new HashMap<>();
+        for (int i = 0; i < keys.length && i < values.length; i++) {
+            row.put(keys[i], BigDecimal.valueOf(values[i]));
+        }
+        return row;
+    }
+
+    private String val(Map<String, String> data, String key) {
+        String v = data.get(key);
+        return v == null ? "" : v.trim();
+    }
+
+    private boolean isTruthy(String val) {
+        if (val == null) return false;
+        String v = val.trim().toLowerCase();
+        return v.equals("1") || v.equals("x") || v.equals("v") || v.equals("co")
+            || v.equals("có") || v.equals("true") || v.equals("yes") || v.equals("y");
+    }
+
+    private String cell(String[] row, int idx) {
+        if (idx >= row.length) return "";
+        return row[idx] == null ? "" : row[idx].trim();
     }
 
     private void handleAction(int row, MouseEvent e) {

@@ -1,6 +1,12 @@
 const jwt = require('jsonwebtoken');
 
+// Auth middleware can be disabled for local testing by setting DISABLE_AUTH=true
+// in the server .env or environment. When disabled, requests are allowed through.
 const authMiddleware = (req, res, next) => {
+    if (process.env.DISABLE_AUTH === 'true') {
+        return next();
+    }
+
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -10,7 +16,6 @@ const authMiddleware = (req, res, next) => {
     const token = authHeader.split(' ')[1];
 
     try {
-        // Sử dụng một secret key mặc định hoặc từ biến môi trường
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'tuyensinh_secret_key');
         req.user = decoded;
         next();

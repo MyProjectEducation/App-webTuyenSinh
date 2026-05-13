@@ -9,7 +9,13 @@ class SubjectComboModel {
     static async create(data) {
         const { maToHop, tenToHop, mon1, mon2, mon3 } = data;
         const [result] = await db.query(
-            'INSERT INTO xt_tohop_monthi (matohop, tentohop, mon1, mon2, mon3) VALUES (?, ?, ?, ?, ?)',
+            `INSERT INTO xt_tohop_monthi (matohop, tentohop, mon1, mon2, mon3) \
+             VALUES (?, ?, ?, ?, ?) \
+             ON DUPLICATE KEY UPDATE \
+               tentohop = IF(VALUES(tentohop) IS NOT NULL, VALUES(tentohop), tentohop), \
+               mon1 = IF(VALUES(mon1) IS NOT NULL, VALUES(mon1), mon1), \
+               mon2 = IF(VALUES(mon2) IS NOT NULL, VALUES(mon2), mon2), \
+               mon3 = IF(VALUES(mon3) IS NOT NULL, VALUES(mon3), mon3)`,
             [maToHop, tenToHop, mon1, mon2, mon3]
         );
         return result;
