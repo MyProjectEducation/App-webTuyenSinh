@@ -1,5 +1,7 @@
 package ui.panels;
 
+import dao.DiemCongDAO;
+import entity.DiemCong;
 import ui.MainFrame;
 import ui.components.AppTheme;
 import ui.components.UIComponents;
@@ -10,29 +12,35 @@ import javax.swing.border.*;
 import javax.swing.table.*;
 import java.awt.*;
 import java.awt.event.*;
+import java.math.BigDecimal;
+import java.util.List;
 
 public class DiemCongPanel extends BasePanel {
+
+    private final DiemCongDAO diemCongDAO = new DiemCongDAO();
 
     private DefaultTableModel tableModel;
     private JTable table;
     private JTextField txtSearch;
 
+    /** Thứ tự khớp bảng `xt_diemcongxetuyen` trong dataNow.sql + cột thao tác UI */
     private static final String[] COLUMNS = {
-        "ID", "CCCD", "Ngành", "Nguyện vọng",
-        "Tổ hợp", "Điểm cộng Tiếng Anh", "Điểm cộng HSG", "Tổng điểm cộng",
-        "Ghi chú", "Hành động"
+        "ID", "CCCD", "Điểm tổng", "Mã ngành",
+        "Mã tổ hợp", "Phương thức", "Ghi chú",
+        "dc_keys", "Điểm CC", "Điểm ƯTXT", "Hành động"
     };
 
-    private static final Object[][] DATA = {
-        {1,  "056307010216", "7340101", 1, "B00", 0.25, 0.75, 1.00, "Ưu tiên khu vực"},
-        {2,  "056307010216", "7340101", 2, "X22", 0.25, 0.75, 1.00, "Ưu tiên khu vực"},
-        {3,  "056307010216", "7340101", 3, "B02", 0.25, 0.75, 1.00, "Ưu tiên khu vực"},
-        {4,  "056307010216", "7340101", 4, "B01", 0.25, 0.75, 1.00, "Ưu tiên khu vực"},
-        {5,  "056307010216", "7340101", 5, "A07", 0.25, 0.75, 1.00, "Ưu tiên khu vực"},
-        {6,  "001207008830", "7140114", 2, "D01", 0.50, 0.75, 1.25, "KV1 + UT3"},
-        {7,  "001207012439", "7140202", 4, "C01", 2.00, 0.75, 2.75, "KV1 + UT1"},
-        {8,  "001207009704", "7140201", 1, "M01", 0.00, 0.50, 0.50, "KV2-NT"},
-    };
+    private static final int COL_ID = 0;
+    private static final int COL_CCCD = 1;
+    private static final int COL_DIEM_TONG = 2;
+    private static final int COL_MA_NGANH = 3;
+    private static final int COL_MA_TOHOP = 4;
+    private static final int COL_PHUONG_THUC = 5;
+    private static final int COL_GHI_CHU = 6;
+    private static final int COL_DC_KEYS = 7;
+    private static final int COL_DIEM_CC = 8;
+    private static final int COL_DIEM_UTXT = 9;
+    private static final int COL_ACTIONS = 10;
 
     public DiemCongPanel(MainFrame mainFrame) {
         super(mainFrame);
@@ -54,8 +62,7 @@ public class DiemCongPanel extends BasePanel {
         txtSearch = UIComponents.searchField("Tìm theo CCCD thí sinh...");
         txtSearch.setPreferredSize(new Dimension(250, 30));
         RoundButton btnSearch = RoundButton.secondary("Tìm");
-        btnSearch.addActionListener(e -> JOptionPane.showMessageDialog(this,
-            "→ diemCongDAO.search(cccd=\"" + txtSearch.getText() + "\")", "Search", JOptionPane.INFORMATION_MESSAGE));
+        btnSearch.addActionListener(e -> loadData());
 
         JPanel searchBar = buildSearchBar(new JLabel("  Tìm: "), txtSearch, btnSearch);
 
@@ -66,30 +73,35 @@ public class DiemCongPanel extends BasePanel {
         UIComponents.styleTable(table);
         loadData();
 
-        int[] widths = {45, 110, 80, 85, 70, 120, 120, 110, 160, 90};
+        int[] widths = {52, 120, 88, 88, 72, 88, 200, 160, 80, 88, 100};
         for (int i = 0; i < widths.length && i < table.getColumnCount(); i++)
             table.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
 
-        // Decimal renderer
         DefaultTableCellRenderer numRender = new DefaultTableCellRenderer() {
             @Override public Component getTableCellRendererComponent(JTable t, Object v,
                     boolean sel, boolean foc, int row, int col) {
-                if (v == null) { setText("—"); setForeground(AppTheme.TEXT_THIRD); }
-                else { setText(String.format("%.2f", Double.parseDouble(v.toString()))); setForeground(AppTheme.TEXT_PRIMARY); }
+                super.getTableCellRendererComponent(t, v, sel, foc, row, col);
+                if (v == null) {
+                    setText("—");
+                    if (!sel) setForeground(AppTheme.TEXT_THIRD);
+                } else {
+                    setText(String.format("%.2f", new BigDecimal(v.toString()).doubleValue()));
+                    if (!sel) setForeground(AppTheme.TEXT_PRIMARY);
+                }
                 setHorizontalAlignment(SwingConstants.CENTER);
                 if (!sel) setBackground(row % 2 == 0 ? AppTheme.BG_PRIMARY : AppTheme.BG_SECONDARY);
                 return this;
             }
         };
-        for (int i : new int[]{5, 6}) table.getColumnModel().getColumn(i).setCellRenderer(numRender);
+        for (int i : new int[]{COL_DIEM_TONG, COL_DIEM_CC, COL_DIEM_UTXT})
+            table.getColumnModel().getColumn(i).setCellRenderer(numRender);
 
-        // diemTong highlighted
         DefaultTableCellRenderer tongRender = new DefaultTableCellRenderer() {
             @Override public Component getTableCellRendererComponent(JTable t, Object v,
                     boolean sel, boolean foc, int row, int col) {
                 super.getTableCellRendererComponent(t, v, sel, foc, row, col);
                 if (v != null) {
-                    double d = Double.parseDouble(v.toString());
+                    double d = new BigDecimal(v.toString()).doubleValue();
                     setText(String.format("%.2f", d));
                     setForeground(d > 0 ? AppTheme.GREEN : AppTheme.TEXT_SECOND);
                     setFont(AppTheme.FONT_BOLD);
@@ -99,14 +111,14 @@ public class DiemCongPanel extends BasePanel {
                 return this;
             }
         };
-        table.getColumnModel().getColumn(7).setCellRenderer(tongRender);
+        table.getColumnModel().getColumn(COL_DIEM_TONG).setCellRenderer(tongRender);
 
         table.getColumn("Hành động").setCellRenderer(new ActionRenderer());
         table.addMouseListener(new MouseAdapter() {
             @Override public void mouseClicked(MouseEvent e) {
                 int row = table.rowAtPoint(e.getPoint());
                 int col = table.columnAtPoint(e.getPoint());
-                if (col == COLUMNS.length - 1 && row >= 0) handleAction(row, e);
+                if (col == COL_ACTIONS && row >= 0) handleAction(row, e);
             }
         });
 
@@ -121,11 +133,27 @@ public class DiemCongPanel extends BasePanel {
 
     private void loadData() {
         tableModel.setRowCount(0);
-        for (Object[] row : DATA) {
-            Object[] r = new Object[COLUMNS.length];
-            System.arraycopy(row, 0, r, 0, Math.min(row.length, COLUMNS.length - 1));
-            r[COLUMNS.length - 1] = "actions";
-            tableModel.addRow(r);
+        try {
+            List<DiemCong> list = diemCongDAO.findByCccdContaining(txtSearch.getText());
+            for (DiemCong d : list) {
+                tableModel.addRow(new Object[]{
+                    d.getId(),
+                    d.getCccd(),
+                    d.getDiemTong(),
+                    d.getMaNganh(),
+                    d.getMaToHop(),
+                    d.getPhuongThuc(),
+                    d.getGhiChu(),
+                    d.getDcKeys(),
+                    d.getDiemCC(),
+                    d.getDiemUtxt(),
+                    "actions"
+                });
+            }
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this,
+                "Không tải được dữ liệu từ database:\n" + ex.getMessage(),
+                "Lỗi", JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -134,7 +162,16 @@ public class DiemCongPanel extends BasePanel {
         JMenuItem edit = new JMenuItem("✏ Sửa");
         JMenuItem del  = new JMenuItem("🗑 Xóa");
         edit.addActionListener(ev -> showDialog(row));
-        del.addActionListener(ev -> tableModel.removeRow(row));
+        del.addActionListener(ev -> {
+            try {
+                Integer id = (Integer) tableModel.getValueAt(row, COL_ID);
+                diemCongDAO.deleteById(id);
+                loadData();
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, "Không xóa được: " + ex.getMessage(),
+                    "Lỗi", JOptionPane.ERROR_MESSAGE);
+            }
+        });
         menu.add(edit); menu.addSeparator(); menu.add(del);
         menu.show(table, e.getX(), e.getY());
     }
@@ -144,7 +181,7 @@ public class DiemCongPanel extends BasePanel {
         JDialog d = new JDialog(SwingUtilities.getWindowAncestor(this),
             isEdit ? "Sửa điểm cộng" : "Thêm điểm cộng",
             java.awt.Dialog.ModalityType.APPLICATION_MODAL);
-        d.setSize(440, 360);
+        d.setSize(480, 420);
         d.setLocationRelativeTo(this);
 
         JPanel body = new JPanel(new GridBagLayout());
@@ -155,38 +192,40 @@ public class DiemCongPanel extends BasePanel {
         gc.fill = GridBagConstraints.HORIZONTAL;
 
         String[][] fields = {
-            {"CCCD:",                 isEdit ? safe(tableModel.getValueAt(row,1)) : ""},
-            {"Mã ngành:",              isEdit ? safe(tableModel.getValueAt(row,2)) : ""},
-            {"Nguyện vọng:",           isEdit ? safe(tableModel.getValueAt(row,3)) : "1"},
-            {"Tổ hợp môn:",            isEdit ? safe(tableModel.getValueAt(row,4)) : ""},
-            {"Điểm cộng Tiếng Anh:",   isEdit ? safe(tableModel.getValueAt(row,5)) : "0.00"},
-            {"Điểm cộng HSG:",         isEdit ? safe(tableModel.getValueAt(row,6)) : "0.00"},
-            {"Tổng điểm cộng:",        isEdit ? safe(tableModel.getValueAt(row,7)) : "0.00"},
-            {"Ghi chú:",               isEdit ? safe(tableModel.getValueAt(row,8)) : ""},
+            {"CCCD:",              isEdit ? safe(tableModel.getValueAt(row, COL_CCCD)) : ""},
+            {"Mã ngành:",          isEdit ? safe(tableModel.getValueAt(row, COL_MA_NGANH)) : ""},
+            {"Mã tổ hợp:",         isEdit ? safe(tableModel.getValueAt(row, COL_MA_TOHOP)) : ""},
+            {"Phương thức:",       isEdit ? safe(tableModel.getValueAt(row, COL_PHUONG_THUC)) : ""},
+            {"Điểm CC:",           isEdit ? safe(tableModel.getValueAt(row, COL_DIEM_CC)) : "0.00"},
+            {"Điểm ƯTXT:",         isEdit ? safe(tableModel.getValueAt(row, COL_DIEM_UTXT)) : "0.00"},
+            {"Điểm tổng:",         isEdit ? safe(tableModel.getValueAt(row, COL_DIEM_TONG)) : "0.00"},
+            {"dc_keys:",           isEdit ? safe(tableModel.getValueAt(row, COL_DC_KEYS)) : ""},
+            {"Ghi chú:",           isEdit ? safe(tableModel.getValueAt(row, COL_GHI_CHU)) : ""},
         };
         JTextField[] tfs = new JTextField[fields.length];
         for (int i = 0; i < fields.length; i++) {
-            gc.gridx=0; gc.gridy=i; gc.weightx=0.4;
+            gc.gridx = 0; gc.gridy = i; gc.weightx = 0.35;
             body.add(UIComponents.formLabel(fields[i][0]), gc);
-            gc.gridx=1; gc.weightx=0.6;
+            gc.gridx = 1; gc.weightx = 0.65;
             tfs[i] = UIComponents.formField(fields[i][1]);
             body.add(tfs[i], gc);
         }
 
-        JLabel hint = new JLabel("  Tổng điểm cộng = Điểm cộng Tiếng Anh + Điểm cộng HSG");
+        JLabel hint = new JLabel("  Dữ liệu nguồn: bảng xt_diemcongxetuyen (xem dataNow.sql). Thêm/Sửa qua form sẽ được nối DAO sau.");
         hint.setFont(AppTheme.FONT_SMALL);
         hint.setForeground(AppTheme.TEXT_SECOND);
-        gc.gridx=0; gc.gridy=fields.length; gc.gridwidth=2;
+        gc.gridx = 0; gc.gridy = fields.length; gc.gridwidth = 2;
         body.add(hint, gc);
 
         JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
         footer.setBackground(AppTheme.BG_SECONDARY);
-        footer.setBorder(BorderFactory.createMatteBorder(1,0,0,0,AppTheme.BORDER));
+        footer.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, AppTheme.BORDER));
         RoundButton cancel = RoundButton.secondary("Hủy");
         RoundButton save   = RoundButton.primary("Lưu");
         cancel.addActionListener(e -> d.dispose());
         save.addActionListener(e -> {
-            JOptionPane.showMessageDialog(d, "(Demo) Đã lưu điểm cộng.", "Đã lưu", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(d, "(Demo) Lưu entity — cần DiemCongDAO.saveOrUpdate khi triển khai đầy đủ.",
+                "Đã lưu", JOptionPane.INFORMATION_MESSAGE);
             d.dispose();
         });
         footer.add(cancel); footer.add(save);
@@ -201,27 +240,33 @@ public class DiemCongPanel extends BasePanel {
     private void showImport() {
         JFileChooser fc = new JFileChooser();
         fc.setDialogTitle("Import — Điểm cộng");
-        fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("Excel (*.xlsx)", "xlsx","xls"));
+        fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("Excel (*.xlsx)", "xlsx", "xls"));
         if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION)
             JOptionPane.showMessageDialog(this, "(Demo) Sẽ import danh sách điểm cộng.", "Import", JOptionPane.INFORMATION_MESSAGE);
     }
 
     static class ActionRenderer extends DefaultTableCellRenderer {
-        private JPanel panel;
-        public ActionRenderer() {
+        private final JPanel panel;
+
+        ActionRenderer() {
             panel = new JPanel(new FlowLayout(FlowLayout.CENTER, 3, 2));
             panel.setOpaque(true);
             JButton e = new JButton("Sửa"); e.setFont(AppTheme.FONT_SMALL);
             e.setBackground(AppTheme.BG_SECONDARY); e.setForeground(AppTheme.TEXT_PRIMARY);
             e.setBorder(BorderFactory.createLineBorder(AppTheme.BORDER)); e.setFocusPainted(false);
-            JButton d = new JButton("Xóa"); d.setFont(AppTheme.FONT_SMALL);
-            d.setBackground(AppTheme.RED_LIGHT); d.setForeground(AppTheme.RED);
-            d.setBorder(BorderFactory.createLineBorder(AppTheme.RED_LIGHT)); d.setFocusPainted(false);
-            panel.add(e); panel.add(d);
+            JButton del = new JButton("Xóa"); del.setFont(AppTheme.FONT_SMALL);
+            del.setBackground(AppTheme.RED_LIGHT); del.setForeground(AppTheme.RED);
+            del.setBorder(BorderFactory.createLineBorder(AppTheme.RED_LIGHT)); del.setFocusPainted(false);
+            panel.add(e); panel.add(del);
         }
+
         @Override public Component getTableCellRendererComponent(JTable t, Object v,
                 boolean sel, boolean foc, int row, int col) {
-            panel.setBackground(row % 2 == 0 ? AppTheme.BG_PRIMARY : AppTheme.BG_SECONDARY);
+            if (sel) {
+                panel.setBackground(t.getSelectionBackground());
+            } else {
+                panel.setBackground(row % 2 == 0 ? AppTheme.BG_PRIMARY : AppTheme.BG_SECONDARY);
+            }
             return panel;
         }
     }

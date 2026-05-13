@@ -15,5 +15,6 @@
     <mapping class="entity.Nganh"/>
     <mapping class="entity.TohopMon"/>
     <mapping class="entity.NganhTohop"/>
+    <mapping class="entity.DiemCong"/>
   </session-factory>
 </hibernate-configuration>
