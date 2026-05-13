@@ -2,6 +2,7 @@ package ui.components;
 
 import java.awt.*;
 
+
 public class AppTheme {
     // Primary colors
     public static final Color PRIMARY       = new Color(0x18, 0x5F, 0xA5);
@@ -40,6 +41,7 @@ public class AppTheme {
     public static final Font FONT_BOLD     = new Font("Segoe UI", Font.BOLD, 12);
     public static final Font FONT_TABLE_HEADER = new Font("Segoe UI", Font.BOLD, 11);
     public static final Font FONT_MONO     = new Font("Consolas", Font.PLAIN, 11);
+    //init
 
     // Dimensions
     public static final int SIDEBAR_WIDTH  = 210;
