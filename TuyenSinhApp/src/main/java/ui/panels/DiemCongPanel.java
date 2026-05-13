@@ -217,7 +217,7 @@ public class DiemCongPanel extends BasePanel {
         };
         JTextField[] tfs = new JTextField[fields.length];
         for (int i = 0; i < fields.length; i++) {
-            gc.gridx = 0; gc.gridy = i; gc.weightx = 0.35;
+            gc.gridx = 0; gc.gridy = i; gc.weightx = 0.65;
             body.add(UIComponents.formLabel(fields[i][0]), gc);
             gc.gridx = 1; gc.weightx = 0.65;
             tfs[i] = UIComponents.formField(fields[i][1]);
