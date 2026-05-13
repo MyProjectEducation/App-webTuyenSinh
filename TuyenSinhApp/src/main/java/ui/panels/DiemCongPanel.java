@@ -13,6 +13,7 @@ import javax.swing.table.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 
 public class DiemCongPanel extends BasePanel {
@@ -22,6 +23,7 @@ public class DiemCongPanel extends BasePanel {
     private DefaultTableModel tableModel;
     private JTable table;
     private JTextField txtSearch;
+    private JComboBox<String> cboPhuongThuc;
 
     /** Thứ tự khớp bảng `xt_diemcongxetuyen` trong dataNow.sql + cột thao tác UI */
     private static final String[] COLUMNS = {
@@ -64,7 +66,16 @@ public class DiemCongPanel extends BasePanel {
         RoundButton btnSearch = RoundButton.secondary("Tìm");
         btnSearch.addActionListener(e -> loadData());
 
-        JPanel searchBar = buildSearchBar(new JLabel("  Tìm: "), txtSearch, btnSearch);
+        JLabel lblPhuongThuc = new JLabel("  Phương thức:");
+        lblPhuongThuc.setFont(AppTheme.FONT_SMALL);
+        lblPhuongThuc.setForeground(AppTheme.TEXT_SECOND);
+        cboPhuongThuc = new JComboBox<>(new String[]{"Tất cả", "VSAT", "THPT"});
+        cboPhuongThuc.setPreferredSize(new Dimension(118, 30));
+
+        JPanel searchBar = buildSearchBar(
+            new JLabel("  Tìm: "), txtSearch, btnSearch,
+            lblPhuongThuc, cboPhuongThuc
+        );
 
         tableModel = new DefaultTableModel(COLUMNS, 0) {
             public boolean isCellEditable(int r, int c) { return false; }
@@ -72,6 +83,7 @@ public class DiemCongPanel extends BasePanel {
         table = new JTable(tableModel);
         UIComponents.styleTable(table);
         loadData();
+        cboPhuongThuc.addActionListener(e -> loadData());
 
         int[] widths = {52, 120, 88, 88, 72, 88, 200, 160, 80, 88, 100};
         for (int i = 0; i < widths.length && i < table.getColumnCount(); i++)
@@ -134,7 +146,8 @@ public class DiemCongPanel extends BasePanel {
     private void loadData() {
         tableModel.setRowCount(0);
         try {
-            List<DiemCong> list = diemCongDAO.findByCccdContaining(txtSearch.getText());
+            String pt = (String) cboPhuongThuc.getSelectedItem();
+            List<DiemCong> list = diemCongDAO.findFiltered(txtSearch.getText(), pt);
             for (DiemCong d : list) {
                 tableModel.addRow(new Object[]{
                     d.getId(),
@@ -195,10 +208,10 @@ public class DiemCongPanel extends BasePanel {
             {"CCCD:",              isEdit ? safe(tableModel.getValueAt(row, COL_CCCD)) : ""},
             {"Mã ngành:",          isEdit ? safe(tableModel.getValueAt(row, COL_MA_NGANH)) : ""},
             {"Mã tổ hợp:",         isEdit ? safe(tableModel.getValueAt(row, COL_MA_TOHOP)) : ""},
-            {"Phương thức:",       isEdit ? safe(tableModel.getValueAt(row, COL_PHUONG_THUC)) : ""},
+            {"Phương thức:",       isEdit ? safe(tableModel.getValueAt(row, COL_PHUONG_THUC)) : "THPT"},
             {"Điểm CC:",           isEdit ? safe(tableModel.getValueAt(row, COL_DIEM_CC)) : "0.00"},
             {"Điểm ƯTXT:",         isEdit ? safe(tableModel.getValueAt(row, COL_DIEM_UTXT)) : "0.00"},
-            {"Điểm tổng:",         isEdit ? safe(tableModel.getValueAt(row, COL_DIEM_TONG)) : "0.00"},
+            {"Điểm tổng:",         isEdit ? safe(tableModel.getValueAt(row, COL_DIEM_TONG)) : ""},
             {"dc_keys:",           isEdit ? safe(tableModel.getValueAt(row, COL_DC_KEYS)) : ""},
             {"Ghi chú:",           isEdit ? safe(tableModel.getValueAt(row, COL_GHI_CHU)) : ""},
         };
@@ -211,11 +224,13 @@ public class DiemCongPanel extends BasePanel {
             body.add(tfs[i], gc);
         }
 
-        JLabel hint = new JLabel("  Dữ liệu nguồn: bảng xt_diemcongxetuyen (xem dataNow.sql). Thêm/Sửa qua form sẽ được nối DAO sau.");
+        JLabel hint = new JLabel("  Để trống dc_keys → tự tạo CCCD_mãNgành_mãTổHợp. Để trống Điểm tổng → CC + ƯTXT (+ điểm thưởng nếu có khi sửa).");
         hint.setFont(AppTheme.FONT_SMALL);
         hint.setForeground(AppTheme.TEXT_SECOND);
         gc.gridx = 0; gc.gridy = fields.length; gc.gridwidth = 2;
         body.add(hint, gc);
+
+        final Integer editId = isEdit ? (Integer) tableModel.getValueAt(row, COL_ID) : null;
 
         JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
         footer.setBackground(AppTheme.BG_SECONDARY);
@@ -224,9 +239,16 @@ public class DiemCongPanel extends BasePanel {
         RoundButton save   = RoundButton.primary("Lưu");
         cancel.addActionListener(e -> d.dispose());
         save.addActionListener(e -> {
-            JOptionPane.showMessageDialog(d, "(Demo) Lưu entity — cần DiemCongDAO.saveOrUpdate khi triển khai đầy đủ.",
-                "Đã lưu", JOptionPane.INFORMATION_MESSAGE);
-            d.dispose();
+            try {
+                DiemCong entity = readEntityFromForm(tfs, editId);
+                diemCongDAO.saveOrUpdate(entity);
+                loadData();
+                d.dispose();
+            } catch (IllegalArgumentException ex) {
+                JOptionPane.showMessageDialog(d, ex.getMessage(), "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(d, "Không lưu được:\n" + ex.getMessage(), "Lỗi", JOptionPane.ERROR_MESSAGE);
+            }
         });
         footer.add(cancel); footer.add(save);
         d.setLayout(new BorderLayout());
@@ -237,6 +259,86 @@ public class DiemCongPanel extends BasePanel {
 
     private String safe(Object o) { return o == null ? "" : o.toString(); }
 
+    private DiemCong readEntityFromForm(JTextField[] tfs, Integer editId) {
+        String cccd = tfs[0].getText().trim();
+        if (cccd.isEmpty()) {
+            throw new IllegalArgumentException("CCCD không được để trống.");
+        }
+        String maNganh = tfs[1].getText().trim();
+        String maToHop = tfs[2].getText().trim();
+        if (maNganh.isEmpty() || maToHop.isEmpty()) {
+            throw new IllegalArgumentException("Mã ngành và mã tổ hợp là bắt buộc.");
+        }
+
+        String pt = tfs[3].getText().trim();
+        if (pt.isEmpty()) {
+            pt = "THPT";
+        }
+        pt = pt.toUpperCase();
+        if (!"VSAT".equals(pt) && !"THPT".equals(pt)) {
+            throw new IllegalArgumentException("Phương thức phải là VSAT hoặc THPT.");
+        }
+
+        BigDecimal diemCC = parseBd(tfs[4].getText(), BigDecimal.ZERO);
+        BigDecimal diemUtxt = parseBd(tfs[5].getText(), BigDecimal.ZERO);
+
+        BigDecimal diemThuong;
+        if (editId != null) {
+            DiemCong old = diemCongDAO.findById(editId);
+            diemThuong = old != null && old.getDiemThuong() != null ? old.getDiemThuong() : BigDecimal.ZERO;
+        } else {
+            diemThuong = BigDecimal.ZERO;
+        }
+
+        String tongRaw = tfs[6].getText().trim();
+        BigDecimal diemTong;
+        if (tongRaw.isEmpty()) {
+            diemTong = diemCC.add(diemUtxt).add(diemThuong).setScale(2, RoundingMode.HALF_UP);
+        } else {
+            diemTong = new BigDecimal(tongRaw.replace(',', '.')).setScale(2, RoundingMode.HALF_UP);
+        }
+
+        String dcManual = tfs[7].getText().trim();
+        String dcKeys = dcManual.isEmpty() ? buildDefaultDcKeys(cccd, maNganh, maToHop) : dcManual;
+        if (dcKeys.length() > 45) {
+            throw new IllegalArgumentException("dc_keys không được vượt quá 45 ký tự.");
+        }
+
+        DiemCong conflict = diemCongDAO.findByDcKeys(dcKeys);
+        if (conflict != null && (editId == null || !conflict.getId().equals(editId))) {
+            throw new IllegalArgumentException("dc_keys \"" + dcKeys + "\" đã tồn tại trong hệ thống.");
+        }
+
+        String ghiChuRaw = tfs[8].getText().trim();
+        String ghiChu = ghiChuRaw.isEmpty() ? null : ghiChuRaw;
+
+        DiemCong d = new DiemCong();
+        d.setId(editId);
+        d.setCccd(cccd);
+        d.setMaNganh(maNganh);
+        d.setMaToHop(maToHop);
+        d.setPhuongThuc(pt);
+        d.setDiemCC(diemCC);
+        d.setDiemThuong(diemThuong);
+        d.setDiemUtxt(diemUtxt);
+        d.setDiemTong(diemTong);
+        d.setDcKeys(dcKeys);
+        d.setGhiChu(ghiChu);
+        return d;
+    }
+
+    private static BigDecimal parseBd(String s, BigDecimal def) {
+        if (s == null || s.trim().isEmpty()) {
+            return def;
+        }
+        return new BigDecimal(s.trim().replace(',', '.')).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private static String buildDefaultDcKeys(String cccd, String maNganh, String maToHop) {
+        return cccd.replaceAll("\\s+", "")
+            + "_" + maNganh.replaceAll("\\s+", "")
+            + "_" + maToHop.replaceAll("\\s+", "");
+    }
     private void showImport() {
         JFileChooser fc = new JFileChooser();
         fc.setDialogTitle("Import — Điểm cộng");
