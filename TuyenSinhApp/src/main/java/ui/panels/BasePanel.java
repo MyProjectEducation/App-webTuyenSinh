@@ -23,9 +23,8 @@ public abstract class BasePanel extends JPanel {
         JPanel bar = new JPanel(new BorderLayout());
         bar.setBackground(AppTheme.BG_PRIMARY);
         bar.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createMatteBorder(0, 0, 1, 0, AppTheme.BORDER),
-            new EmptyBorder(10, 16, 10, 16)
-        ));
+                BorderFactory.createMatteBorder(0, 0, 1, 0, AppTheme.BORDER),
+                new EmptyBorder(10, 16, 10, 16)));
 
         JPanel left = new JPanel();
         left.setLayout(new BoxLayout(left, BoxLayout.Y_AXIS));
@@ -47,7 +46,8 @@ public abstract class BasePanel extends JPanel {
         if (rightComponents.length > 0) {
             JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
             right.setOpaque(false);
-            for (JComponent c : rightComponents) right.add(c);
+            for (JComponent c : rightComponents)
+                right.add(c);
             bar.add(right, BorderLayout.EAST);
         }
 
@@ -59,7 +59,8 @@ public abstract class BasePanel extends JPanel {
         JPanel bar = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
         bar.setBackground(AppTheme.BG_SECONDARY);
         bar.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, AppTheme.BORDER));
-        for (JComponent c : components) bar.add(c);
+        for (JComponent c : components)
+            bar.add(c);
         return bar;
     }
 
@@ -76,28 +77,52 @@ public abstract class BasePanel extends JPanel {
         JPanel bar = new JPanel(new FlowLayout(FlowLayout.LEFT, 3, 5));
         bar.setBackground(AppTheme.BG_SECONDARY);
         bar.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, AppTheme.BORDER));
-
-        for (int i = 1; i <= Math.min(totalPages, 7); i++) {
-            final int page = i;
-            JButton btn = new JButton(String.valueOf(i));
-            btn.setFont(AppTheme.FONT_SMALL);
-            btn.setPreferredSize(new Dimension(26, 26));
-            btn.setFocusPainted(false);
-            btn.setBorderPainted(true);
-            btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            if (i == currentPage) {
-                btn.setBackground(AppTheme.PRIMARY);
-                btn.setForeground(Color.WHITE);
-                btn.setBorder(BorderFactory.createLineBorder(AppTheme.PRIMARY));
-            } else {
-                btn.setBackground(AppTheme.BG_PRIMARY);
-                btn.setForeground(AppTheme.TEXT_SECOND);
-                btn.setBorder(BorderFactory.createLineBorder(AppTheme.BORDER));
+        if (currentPage < 5) {
+            for (int i = 1; i <= Math.min(totalPages, 7); i++) {
+                final int page = i;
+                JButton btn = new JButton(String.valueOf(i));
+                btn.setFont(AppTheme.FONT_SMALL);
+                btn.setPreferredSize(new Dimension(26, 26));
+                btn.setFocusPainted(false);
+                btn.setBorderPainted(true);
+                btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                if (i == currentPage) {
+                    btn.setBackground(AppTheme.PRIMARY);
+                    btn.setForeground(Color.BLUE);
+                    btn.setBorder(BorderFactory.createLineBorder(AppTheme.PRIMARY));
+                } else {
+                    btn.setBackground(AppTheme.BG_PRIMARY);
+                    btn.setForeground(AppTheme.TEXT_SECOND);
+                    btn.setBorder(BorderFactory.createLineBorder(AppTheme.BORDER));
+                }
+                if (pageActions != null && page <= pageActions.length) {
+                    btn.addActionListener(e -> pageActions[page - 1].run());
+                }
+                bar.add(btn);
             }
-            if (pageActions != null && page <= pageActions.length) {
-                btn.addActionListener(e -> pageActions[page - 1].run());
+        } else {
+            for (int i = currentPage - 3; i <= Math.min(totalPages, currentPage + 3); i++) {
+                final int page = i;
+                JButton btn = new JButton(String.valueOf(i));
+                btn.setFont(AppTheme.FONT_SMALL);
+                btn.setPreferredSize(new Dimension(26, 26));
+                btn.setFocusPainted(false);
+                btn.setBorderPainted(true);
+                btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                if (i == currentPage) {
+                    btn.setBackground(AppTheme.PRIMARY);
+                    btn.setForeground(Color.BLUE);
+                    btn.setBorder(BorderFactory.createLineBorder(AppTheme.PRIMARY));
+                } else {
+                    btn.setBackground(AppTheme.BG_PRIMARY);
+                    btn.setForeground(AppTheme.TEXT_SECOND);
+                    btn.setBorder(BorderFactory.createLineBorder(AppTheme.BORDER));
+                }
+                if (pageActions != null && page <= pageActions.length) {
+                    btn.addActionListener(e -> pageActions[page - 1].run());
+                }
+                bar.add(btn);
             }
-            bar.add(btn);
         }
 
         JLabel info = new JLabel("  Tổng: " + totalRows + " bản ghi  |  " + totalPages + " trang");
