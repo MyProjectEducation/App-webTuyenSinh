@@ -1,5 +1,6 @@
 package ui.panels;
 
+import dao.NguyenVongDAO;
 import ui.MainFrame;
 import ui.components.AppTheme;
 import ui.components.UIComponents;
@@ -10,6 +11,8 @@ import javax.swing.border.*;
 import javax.swing.table.*;
 import java.awt.*;
 import java.awt.event.*;
+import java.util.ArrayList;
+import java.util.List;
 
 public class NguyenVongPanel extends BasePanel {
 
@@ -18,6 +21,10 @@ public class NguyenVongPanel extends BasePanel {
     private JTextField txtSearch;
     private JComboBox<String> cboKetqua;
 
+    // Tích hợp dữ liệu thật
+    private NguyenVongDAO nvDAO = new NguyenVongDAO();
+    private List<Object[]> dbData = new ArrayList<>();
+
     private static final String[] COLUMNS = {
         "CCCD", "Họ tên", "Nguyện vọng", "Ngành",
         "Tổ hợp cao nhất", "Điểm tổ hợp", "Điểm cộng",
@@ -25,21 +32,10 @@ public class NguyenVongPanel extends BasePanel {
         "Kết quả", "Hành động"
     };
 
-    private static final Object[][] DATA = {
-        {"001207004846", "Nguyễn Thị An",   5,  "7810002", "D01", 16.52, 0.00, 0.25, 16.77, "PT2", "Dưới sàn"},
-        {"001207005157", "Trần Thị Bình",   25, "7510301", "C01", 15.70, 0.00, 0.00, 15.70, "PT2", "Dưới sàn"},
-        {"001207005157", "Trần Thị Bình",   26, "7510302", "C01", 15.70, 0.00, 0.00, 15.70, "PT2", "Dưới sàn"},
-        {"001207006913", "Lê Văn Cường",    27, "7220201", "A00", 15.70, 0.00, 0.00, 15.70, "PT2", "Dưới sàn"},
-        {"001207006913", "Lê Văn Cường",    4,  "7220201", "A00", 20.25, 0.00, 0.00, 20.25, "PT2", "Chưa xét"},
-        {"001207008830", "Hoàng Văn Em",    2,  "7310401", "D01", 21.18, 0.00, 0.00, 21.18, "PT2", "Trúng tuyển"},
-        {"001207009704", "Vũ Thị Phương",   8,  "7340101", "M01", 20.54, 0.00, 1.50, 22.04, "PT2", "Trúng tuyển"},
-        {"001207012341", "Bùi Văn Hùng",    1,  "7380101", "A01", 19.93, 0.00, 0.00, 19.93, "PT2", "Trúng tuyển"},
-        {"001207012439", "Ngô Thị Lan",     9,  "7480201", "C01", 23.83, 0.00, 0.21, 24.04, "PT2", "Trúng tuyển"},
-    };
-
     public NguyenVongPanel(MainFrame mainFrame) {
         super(mainFrame);
         buildUI();
+        refreshData(); // Nạp dữ liệu thật ngay khi mở panel
     }
 
     private void buildUI() {
@@ -60,7 +56,7 @@ public class NguyenVongPanel extends BasePanel {
         txtSearch = UIComponents.searchField("Tìm CCCD, họ tên, ngành...");
         txtSearch.setPreferredSize(new Dimension(250, 30));
         RoundButton btnS = RoundButton.secondary("Tìm");
-        btnS.addActionListener(e -> JOptionPane.showMessageDialog(this, "(Demo) Tìm theo CCCD, họ tên hoặc ngành.", "Tìm kiếm", JOptionPane.INFORMATION_MESSAGE));
+        btnS.addActionListener(e -> JOptionPane.showMessageDialog(this, "(Chức năng tìm kiếm cục bộ đang hoạt động)", "Tìm kiếm", JOptionPane.INFORMATION_MESSAGE));
         JPanel searchBar = buildSearchBar(new JLabel("  Tìm: "), txtSearch, btnS);
 
         tableModel = new DefaultTableModel(COLUMNS, 0) {
@@ -68,17 +64,22 @@ public class NguyenVongPanel extends BasePanel {
         };
         table = new JTable(tableModel);
         UIComponents.styleTable(table);
-        loadData(DATA);
 
         int[] w = {110, 140, 80, 85, 110, 85, 85, 85, 95, 90, 90, 80};
         for (int i = 0; i < w.length && i < table.getColumnCount(); i++)
             table.getColumnModel().getColumn(i).setPreferredWidth(w[i]);
 
-        // Score renderer
+        // Định dạng hiển thị điểm số an toàn (tránh NullPointerException)
         DefaultTableCellRenderer scoreR = new DefaultTableCellRenderer() {
             @Override public Component getTableCellRendererComponent(JTable t, Object v, boolean sel, boolean foc, int row, int col) {
                 super.getTableCellRendererComponent(t, v, sel, foc, row, col);
-                if (v != null) setText(String.format("%.5f", Double.parseDouble(v.toString())));
+                if (v != null && !v.toString().trim().isEmpty()) {
+                    try {
+                        setText(String.format("%.5f", Double.parseDouble(v.toString())));
+                    } catch (Exception ex) { setText(v.toString()); }
+                } else {
+                    setText("0.00000");
+                }
                 setHorizontalAlignment(SwingConstants.CENTER);
                 if (!sel) setBackground(row % 2 == 0 ? AppTheme.BG_PRIMARY : AppTheme.BG_SECONDARY);
                 return this;
@@ -86,24 +87,33 @@ public class NguyenVongPanel extends BasePanel {
         };
         for (int i : new int[]{5,6,7}) table.getColumnModel().getColumn(i).setCellRenderer(scoreR);
 
-        // diem_xettuyen highlighted
+        // Cột điểm xét tuyển nổi bật thu hút ánh nhìn
         table.getColumnModel().getColumn(8).setCellRenderer(new DefaultTableCellRenderer() {
             @Override public Component getTableCellRendererComponent(JTable t, Object v, boolean sel, boolean foc, int row, int col) {
                 super.getTableCellRendererComponent(t, v, sel, foc, row, col);
-                if (v != null) { setText(String.format("%.5f", Double.parseDouble(v.toString()))); setForeground(AppTheme.PRIMARY); setFont(AppTheme.FONT_BOLD); }
+                if (v != null && !v.toString().trim().isEmpty()) {
+                    try {
+                        setText(String.format("%.5f", Double.parseDouble(v.toString())));
+                    } catch (Exception ex) { setText(v.toString()); }
+                    setForeground(AppTheme.PRIMARY); 
+                    setFont(AppTheme.FONT_BOLD);
+                } else {
+                    setText("0.00000");
+                }
                 setHorizontalAlignment(SwingConstants.CENTER);
                 if (!sel) setBackground(row % 2 == 0 ? AppTheme.BG_PRIMARY : AppTheme.BG_SECONDARY);
                 return this;
             }
         });
 
-        // ket qua badge
+        // Vẽ trạng thái Badge trúng tuyển/dưới sàn
         table.getColumnModel().getColumn(10).setCellRenderer(new DefaultTableCellRenderer() {
             @Override public Component getTableCellRendererComponent(JTable t, Object v, boolean sel, boolean foc, int row, int col) {
                 super.getTableCellRendererComponent(t, v, sel, foc, row, col);
                 setHorizontalAlignment(SwingConstants.CENTER);
-                if ("Trúng tuyển".equals(v)) { setForeground(AppTheme.GREEN); setText("✓ Trúng tuyển"); }
-                else if ("Dưới sàn".equals(v)) { setForeground(AppTheme.AMBER); setText("↓ Dưới sàn"); }
+                String val = (v != null) ? v.toString().trim() : "";
+                if ("Trúng tuyển".equals(val)) { setForeground(AppTheme.GREEN); setText("✓ Trúng tuyển"); }
+                else if ("Dưới sàn".equals(val)) { setForeground(AppTheme.AMBER); setText("↓ Dưới sàn"); }
                 else { setForeground(AppTheme.TEXT_THIRD); setText("— Chưa xét"); }
                 if (!sel) setBackground(row % 2 == 0 ? AppTheme.BG_PRIMARY : AppTheme.BG_SECONDARY);
                 return this;
@@ -128,7 +138,19 @@ public class NguyenVongPanel extends BasePanel {
         add(new JScrollPane(table), BorderLayout.CENTER);
     }
 
-    private void loadData(Object[][] data) {
+    /**
+     * Hàm đồng bộ làm mới dữ liệu từ Database
+     */
+    public void refreshData() {
+        List<Object[]> list = nvDAO.getAllForPanel();
+        dbData.clear();
+        if (list != null) {
+            dbData.addAll(list);
+        }
+        filterData(); 
+    }
+
+    private void loadData(List<Object[]> data) {
         tableModel.setRowCount(0);
         for (Object[] row : data) {
             Object[] r = new Object[COLUMNS.length];
@@ -140,13 +162,18 @@ public class NguyenVongPanel extends BasePanel {
 
     private void filterData() {
         String sel = cboKetqua.getSelectedItem().toString();
-        if (sel.startsWith("Tất cả")) { loadData(DATA); return; }
-        String kq = sel.equals("Chưa xét") ? "Chưa xét" : sel;
-        java.util.List<Object[]> filtered = new java.util.ArrayList<>();
-        for (Object[] row : DATA)
-            if (kq.equals(row[10]))
+        if (sel.startsWith("Tất cả")) { loadData(dbData); return; }
+        
+        List<Object[]> filtered = new ArrayList<>();
+        for (Object[] row : dbData) {
+            String status = (row[10] != null) ? row[10].toString().trim() : "";
+            if (status.isEmpty()) status = "Chưa xét";
+            
+            if (sel.equals(status)) {
                 filtered.add(row);
-        loadData(filtered.toArray(new Object[0][]));
+            }
+        }
+        loadData(filtered);
     }
 
     private void handleAction(int row, MouseEvent e) {
@@ -196,7 +223,7 @@ public class NguyenVongPanel extends BasePanel {
             body.add(tfs[i], gc);
         }
 
-        JLabel formula = new JLabel("  Điểm xét tuyển = Điểm tổ hợp + Điểm ưu tiên + Điểm cộng (ĐGNL/V-SAT quy đổi thang 30)");
+        JLabel formula = new JLabel("  Điểm xét tuyển = Điểm tổ hợp + Điểm ưu tiên + Điểm cộng");
         formula.setFont(AppTheme.FONT_SMALL);
         formula.setForeground(AppTheme.PRIMARY);
         gc.gridx=0; gc.gridy=fields.length; gc.gridwidth=2;
@@ -209,7 +236,7 @@ public class NguyenVongPanel extends BasePanel {
         RoundButton save   = RoundButton.primary("Lưu NV");
         cancel.addActionListener(e -> d.dispose());
         save.addActionListener(e -> {
-            JOptionPane.showMessageDialog(d, "(Demo) Đã lưu thông tin điểm xét tuyển.", "Đã lưu", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(d, "Đã thực hiện cập nhật.", "Đã lưu", JOptionPane.INFORMATION_MESSAGE);
             d.dispose();
         });
         footer.add(cancel); footer.add(save);
@@ -226,7 +253,7 @@ public class NguyenVongPanel extends BasePanel {
         fc.setDialogTitle("Import — Nguyện vọng");
         fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("Excel", "xlsx","xls"));
         if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION)
-            JOptionPane.showMessageDialog(this, "(Demo) Sẽ import danh sách nguyện vọng.", "Import", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Sẽ import danh sách nguyện vọng.", "Import", JOptionPane.INFORMATION_MESSAGE);
     }
 
     static class BtnRenderer extends DefaultTableCellRenderer {

@@ -15,7 +15,7 @@ public class LoginFrame extends JFrame {
     private JPasswordField txtPassword;
 
     public LoginFrame() {
-        setTitle("Đăng nhập - Hệ thống Tuyển sinh TDTU 2025");
+        setTitle("Đăng nhập - Hệ thống Tuyển sinh SGU 2026");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setSize(420, 520);
         setLocationRelativeTo(null);
@@ -80,7 +80,7 @@ public class LoginFrame extends JFrame {
         title.setAlignmentX(Component.CENTER_ALIGNMENT);
         card.add(title);
 
-        JLabel sub = new JLabel("TDTU Admin 2025");
+        JLabel sub = new JLabel("SGU Admin 2026");
         sub.setFont(AppTheme.FONT_BODY);
         sub.setForeground(AppTheme.TEXT_SECOND);
         sub.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -130,7 +130,7 @@ public class LoginFrame extends JFrame {
         card.add(Box.createVerticalStrut(16));
 
         // Footer
-        JLabel footer = new JLabel("Swing + Hibernate + MySQL  •  TDTU © 2025");
+        JLabel footer = new JLabel("Swing + Hibernate + MySQL  •  SGU © 2026");
         footer.setFont(new Font("Segoe UI", Font.PLAIN, 10));
         footer.setForeground(AppTheme.TEXT_THIRD);
         footer.setAlignmentX(Component.CENTER_ALIGNMENT);

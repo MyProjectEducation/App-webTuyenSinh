@@ -1,15 +1,17 @@
 package ui.panels;
 
+import dao.XetTuyenDAO;
 import ui.MainFrame;
 import ui.components.AppTheme;
 import ui.components.UIComponents;
 import ui.components.UIComponents.RoundButton;
 
 import javax.swing.*;
-import javax.swing.border.*;
-import javax.swing.table.*;
+import javax.swing.border.EmptyBorder;
+import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.DefaultTableModel;
 import java.awt.*;
-import java.awt.event.*;
+import java.util.List;
 
 public class XetTuyenPanel extends BasePanel {
 
@@ -19,20 +21,16 @@ public class XetTuyenPanel extends BasePanel {
     private JTable detailTable;
     private DefaultTableModel methodModel;
     private JTable methodTable;
+    
+    // Panel chứa thẻ thống kê số liệu trên đỉnh
+    private JPanel statRow;
+
+    // Khởi tạo lớp kết nối dữ liệu
+    private XetTuyenDAO xtDAO = new XetTuyenDAO();
 
     private static final String[] SUMMARY_COLUMNS = {
         "Mã ngành", "Tên ngành", "Chỉ tiêu", "Số trúng tuyển",
         "Điểm xét tuyển thấp nhất", "Cao nhất", "Trung bình", "Trạng thái"
-    };
-
-    private static final Object[][] SUMMARY_DATA = {
-        {"7140202", "Giáo dục Tiểu học", 200, 200, 18.50, 29.50, 21.50, "yes"},
-        {"7140201", "Giáo dục Mầm non",  200, 200, 17.25, 28.00, 20.30, "yes"},
-        {"7140231", "Sư phạm Tiếng Anh", 120, 118, 22.00, 30.00, 26.50, "yes"},
-        {"7140209", "Sư phạm Toán học",  40,  35,  24.50, 30.00, 28.00, "duoisan"},
-        {"7140217", "Sư phạm Ngữ văn",   50,  50,  21.00, 29.50, 25.50, "yes"},
-        {"7140114", "Quản lý giáo dục",  40,  40,  17.00, 27.00, 21.00, "yes"},
-        {"7140221", "Sư phạm Âm nhạc",   75,  60,  18.00, 26.00, 22.00, "duoisan"},
     };
 
     private static final String[] DETAIL_COLUMNS = {
@@ -40,68 +38,57 @@ public class XetTuyenPanel extends BasePanel {
         "Phương thức", "Tổ hợp", "Điểm xét tuyển", "Kết quả"
     };
 
-    private static final Object[][] DETAIL_DATA = {
-        {"Sư phạm Tiếng Anh", "001207008830", "Hoàng Văn Em", 2, "PT2", "D01", 21.18, "Trúng tuyển"},
-        {"Giáo dục Tiểu học", "001207012341", "Bùi Văn Hùng", 1, "PT2", "A01", 19.93, "Trúng tuyển"},
-        {"Sư phạm Toán học",  "001207006913", "Lê Văn Cường", 4, "PT2", "A00", 20.25, "Chưa xét"},
-    };
-
     private static final String[] METHOD_COLUMNS = {
         "Mã ngành", "Tên ngành", "THPT", "V-SAT", "ĐGNL", "Tổng"
-    };
-
-    private static final Object[][] METHOD_DATA = {
-        {"7140231", "Sư phạm Tiếng Anh", 80, 25, 13, 118},
-        {"7140202", "Giáo dục Tiểu học", 120, 60, 20, 200},
-        {"7140201", "Giáo dục Mầm non",  150, 35, 15, 200},
     };
 
     public XetTuyenPanel(MainFrame mainFrame) {
         super(mainFrame);
         buildUI();
+        refreshAllData(); // Đồng bộ dữ liệu thật khi khởi tạo
     }
 
     private void buildUI() {
         RoundButton btnRun = RoundButton.primary("▶ Chạy xét tuyển");
         RoundButton btnExport = RoundButton.secondary("Xuất kết quả Excel");
+        
         btnRun.addActionListener(e -> runXetTuyen());
         btnExport.addActionListener(e -> JOptionPane.showMessageDialog(this,
-            "(Demo) Sẽ xuất kết quả ra file Excel.", "Xuất Excel", JOptionPane.INFORMATION_MESSAGE));
+            "Tính năng xuất báo cáo Excel đang được chuẩn bị tích hợp.", "Xuất Excel", JOptionPane.INFORMATION_MESSAGE));
 
         JPanel topBar = buildTopBar(
-            "Kết quả xét tuyển",
-            "Chỉ làm nền UI, chưa kết nối dữ liệu thật",
+            "Kết quả & Thống Kê Xét Tuyển",
+            "Dữ liệu tổng hợp thời gian thực từ cơ sở dữ liệu hệ thống",
             btnExport, btnRun
         );
 
-        // Stat row
-        JPanel statRow = new JPanel(new GridLayout(1, 3, 10, 0));
+        // Khởi tạo vùng hiển thị thẻ thống kê số liệu
+        statRow = new JPanel(new GridLayout(1, 3, 10, 0));
         statRow.setOpaque(false);
         statRow.setBorder(new EmptyBorder(12, 14, 12, 14));
-        statRow.add(UIComponents.statCard("Trúng tuyển", "1,284", AppTheme.GREEN, "Đã đạt"));
-        statRow.add(UIComponents.statCard("Dưới sàn",    "716",   AppTheme.AMBER, "Chưa đạt"));
-        statRow.add(UIComponents.statCard("Chưa xét",    "412",   AppTheme.RED,   "Chờ xử lý"));
 
+        // Cấu hình bảng Tổng hợp ngành
         summaryModel = new DefaultTableModel(SUMMARY_COLUMNS, 0) {
             public boolean isCellEditable(int r, int c) { return false; }
         };
         summaryTable = new JTable(summaryModel);
         UIComponents.styleTable(summaryTable);
-        loadSummaryData();
 
         int[] w = {80, 180, 70, 80, 100, 100, 100, 90};
         for (int i = 0; i < w.length && i < summaryTable.getColumnCount(); i++)
             summaryTable.getColumnModel().getColumn(i).setPreferredWidth(w[i]);
 
-        // so_trungtd vs chitieu renderer
+        // Trình kết xuất màu sắc chỉ tiêu
         summaryTable.getColumnModel().getColumn(3).setCellRenderer(new DefaultTableCellRenderer() {
             @Override public Component getTableCellRendererComponent(JTable t, Object v, boolean sel, boolean foc, int row, int col) {
                 super.getTableCellRendererComponent(t, v, sel, foc, row, col);
-                if (v != null) {
-                    int chitieu = Integer.parseInt(t.getValueAt(row, 2).toString());
-                    int tt = Integer.parseInt(v.toString());
-                    setForeground(tt >= chitieu ? AppTheme.GREEN : AppTheme.AMBER);
-                    setFont(AppTheme.FONT_BOLD);
+                if (v != null && t.getValueAt(row, 2) != null) {
+                    try {
+                        int chitieu = Integer.parseInt(t.getValueAt(row, 2).toString());
+                        int tt = Integer.parseInt(v.toString());
+                        setForeground(tt >= chitieu ? AppTheme.GREEN : AppTheme.AMBER);
+                        setFont(AppTheme.FONT_BOLD);
+                    } catch (Exception e) {}
                 }
                 setHorizontalAlignment(SwingConstants.CENTER);
                 if (!sel) setBackground(row % 2 == 0 ? AppTheme.BG_PRIMARY : AppTheme.BG_SECONDARY);
@@ -109,7 +96,7 @@ public class XetTuyenPanel extends BasePanel {
             }
         });
 
-        // trang_thai
+        // Trình kết xuất trạng thái đủ/thiếu chỉ tiêu
         summaryTable.getColumnModel().getColumn(7).setCellRenderer(new DefaultTableCellRenderer() {
             @Override public Component getTableCellRendererComponent(JTable t, Object v, boolean sel, boolean foc, int row, int col) {
                 super.getTableCellRendererComponent(t, v, sel, foc, row, col);
@@ -121,31 +108,32 @@ public class XetTuyenPanel extends BasePanel {
             }
         });
 
+        // Cấu hình bảng Chi tiết trúng tuyển
         detailModel = new DefaultTableModel(DETAIL_COLUMNS, 0) {
             public boolean isCellEditable(int r, int c) { return false; }
         };
         detailTable = new JTable(detailModel);
         UIComponents.styleTable(detailTable);
-        loadDetailData();
 
         detailTable.getColumnModel().getColumn(7).setCellRenderer(new DefaultTableCellRenderer() {
             @Override public Component getTableCellRendererComponent(JTable t, Object v, boolean sel, boolean foc, int row, int col) {
                 super.getTableCellRendererComponent(t, v, sel, foc, row, col);
                 setHorizontalAlignment(SwingConstants.CENTER);
-                if ("Trúng tuyển".equals(v)) { setForeground(AppTheme.GREEN); setText("✓ Trúng tuyển"); }
-                else if ("Dưới sàn".equals(v)) { setForeground(AppTheme.AMBER); setText("↓ Dưới sàn"); }
+                String val = (v != null) ? v.toString() : "";
+                if ("Trúng tuyển".equals(val)) { setForeground(AppTheme.GREEN); setText("✓ Trúng tuyển"); }
+                else if ("Dưới sàn".equals(val)) { setForeground(AppTheme.AMBER); setText("↓ Dưới sàn"); }
                 else { setForeground(AppTheme.TEXT_THIRD); setText("— Chưa xét"); }
                 if (!sel) setBackground(row % 2 == 0 ? AppTheme.BG_PRIMARY : AppTheme.BG_SECONDARY);
                 return this;
             }
         });
 
+        // Cấu hình bảng Thống kê phương thức
         methodModel = new DefaultTableModel(METHOD_COLUMNS, 0) {
             public boolean isCellEditable(int r, int c) { return false; }
         };
         methodTable = new JTable(methodModel);
         UIComponents.styleTable(methodTable);
-        loadMethodData();
 
         JTabbedPane tabs = new JTabbedPane();
         tabs.setFont(AppTheme.FONT_BODY);
@@ -162,37 +150,93 @@ public class XetTuyenPanel extends BasePanel {
         add(tabs, BorderLayout.CENTER);
     }
 
+    /**
+     * Hàm làm mới và nạp toàn bộ các bảng dữ liệu từ DB lên UI
+     */
+    public void refreshAllData() {
+        loadSummaryData();
+        loadDetailData();
+        loadMethodData();
+        updateStatCards();
+    }
+
     private void loadSummaryData() {
         summaryModel.setRowCount(0);
-        for (Object[] row : SUMMARY_DATA) summaryModel.addRow(row);
+        List<Object[]> data = xtDAO.getSummaryData();
+        if (data != null) {
+            for (Object[] row : data) {
+                summaryModel.addRow(new Object[]{
+                    row[0], row[1], row[2], row[3],
+                    String.format("%.2f", Double.parseDouble(row[4].toString())),
+                    String.format("%.2f", Double.parseDouble(row[5].toString())),
+                    String.format("%.2f", Double.parseDouble(row[6].toString())),
+                    row[7]
+                });
+            }
+        }
     }
 
     private void loadDetailData() {
         detailModel.setRowCount(0);
-        for (Object[] row : DETAIL_DATA) detailModel.addRow(row);
+        List<Object[]> data = xtDAO.getDetailData();
+        if (data != null) {
+            for (Object[] row : data) {
+                detailModel.addRow(new Object[]{
+                    row[0], row[1], row[2], row[3], row[4], row[5],
+                    String.format("%.2f", Double.parseDouble(row[6].toString())),
+                    row[7]
+                });
+            }
+        }
     }
 
     private void loadMethodData() {
         methodModel.setRowCount(0);
-        for (Object[] row : METHOD_DATA) methodModel.addRow(row);
+        List<Object[]> data = xtDAO.getMethodData();
+        if (data != null) {
+            for (Object[] row : data) {
+                methodModel.addRow(row);
+            }
+        }
     }
 
+    /**
+     * Cập nhật số lượng động cho 3 ô thống kê trên đỉnh màn hình
+     */
+    private void updateStatCards() {
+        statRow.removeAll(); // Xóa thẻ cũ
+        Object[] stats = xtDAO.getGlobalStats();
+        
+        statRow.add(UIComponents.statCard("Trúng tuyển", String.format("%,d", stats[0]), AppTheme.GREEN, "Đạt chuẩn sàn"));
+        statRow.add(UIComponents.statCard("Dưới sàn",    String.format("%,d", stats[1]), AppTheme.AMBER, "Không đạt chuẩn"));
+        statRow.add(UIComponents.statCard("Chưa xét",    String.format("%,d", stats[2]), AppTheme.RED,   "Đang chờ xử lý"));
+        
+        statRow.revalidate();
+        statRow.repaint();
+    }
+
+    /**
+     * Thực thi nút chạy xét tuyển
+     */
     private void runXetTuyen() {
         int confirm = JOptionPane.showConfirmDialog(this,
-            "Xác nhận chạy xét tuyển?\n\n" +
-            "Hệ thống sẽ:\n" +
-            "1. Tính điểm xét tuyển\n" +
-            "2. So sánh với điểm sàn của từng ngành\n" +
-            "3. Cập nhật kết quả: Trúng tuyển / Dưới sàn\n" +
-            "4. Sắp xếp theo thứ tự nguyện vọng",
-            "Chạy xét tuyển", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
+            "Xác nhận kích hoạt hệ thống chạy thuật toán xét tuyển?\\n\\n" +
+            "Hệ thống sẽ dựa vào dữ liệu thật dưới database để:\\n" +
+            "1. Phân loại điểm thi của thí sinh.\\n" +
+            "2. So sánh đối chiếu với mức sàn trần của từng ngành.\\n" +
+            "3. Tự động chuyển đổi trạng thái kết quả hàng loạt.",
+            "Chạy xét tuyển cục bộ", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
+            
         if (confirm == JOptionPane.YES_OPTION) {
+            // Chạy mô phỏng tính điểm cập nhật dữ liệu thật dưới DB
+            xtDAO.executeAdmissionsSimulation();
+            
+            // Đổ lại dữ liệu mới nhất lên màn hình
+            refreshAllData();
+            
             JOptionPane.showMessageDialog(this,
-                "(Demo) Hoàn thành! Đã cập nhật kết quả xét tuyển.",
-                "Kết quả", JOptionPane.INFORMATION_MESSAGE);
-            loadSummaryData();
-            loadDetailData();
-            loadMethodData();
+                "Thuật toán chạy hoàn tất! Toàn bộ bảng dữ liệu và thẻ thống kê đã đồng bộ thành công.",
+                "Kết quả thành công", JOptionPane.INFORMATION_MESSAGE);
         }
     }
 }
