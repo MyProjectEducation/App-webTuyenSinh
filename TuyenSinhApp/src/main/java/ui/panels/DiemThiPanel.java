@@ -4,45 +4,47 @@ import ui.MainFrame;
 import ui.components.AppTheme;
 import ui.components.UIComponents;
 import ui.components.UIComponents.RoundButton;
+import ui.dialogs.DiemThiSinhDialog;
+import ui.icon.DrawHamburger;
+import entity.DiemThiSinh;
+import entity.ThiSinh;
+import dao.ThiSinhDAO;
+import dao.DiemThiSinhDAO;
 
+import java.util.ArrayList;
+import java.util.List;
 import javax.swing.*;
 import javax.swing.border.*;
 import javax.swing.table.*;
+
 import java.awt.*;
 import java.awt.event.*;
+import java.io.FileInputStream;
+import java.math.BigDecimal;
+import java.io.File;
+
+import org.apache.poi.ss.formula.atp.Switch;
+import org.apache.poi.ss.usermodel.*;
 
 public class DiemThiPanel extends BasePanel {
 
     private DefaultTableModel tableModel;
     private JTable table;
     private JTextField txtSearch;
-    private JComboBox<String> cboPhuongThuc;
+    private List<DiemThiSinh> filteredData;
 
     // Columns matching xt_diemthixettuyen schema
     private static final String[] COLUMNS = {
-        "ID", "CCCD", "Số báo danh", "Phương thức",
-        "Toán", "Lý", "Hóa", "Sinh", "Sử", "Địa", "Ngữ văn",
-        "Anh (thi)", "Anh (chứng chỉ)", "Công nghệ CN", "Công nghệ NN", "Tin học", "KTPL",
-        "ĐGNL", "Năng khiếu 1", "Năng khiếu 2", "Hành động"
+            "ID", "CCCD", "Số báo danh", "Phương thức",
+            "Toán", "Lý", "Hóa", "Sinh", "Sử", "Địa", "Ngữ văn",
+            "Anh (thi)", "Anh (chứng chỉ)", "Công nghệ CN", "Công nghệ NN", "Tin học", "KTPL",
+            "Năng khiếu 1", "Năng khiếu 2", "Hành động"
     };
 
-    private static final Object[][] DATA = {
-        {3,  "001207004846","001207004846","PT4", 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, null, 0.00, 0.00, 0.00, 0.00, 0.00, null, null, null},
-        {4,  "001207005157","001207005157","PT4", 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, null, 0.00, 0.00, 0.00, 0.00, 0.00, null, null, null},
-        {5,  "001207006913","001207006913","PT4", 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 10.00,0.00, 0.00, 0.00, 0.00, 0.00, null, null, null},
-        {6,  "001207006593","001207006593","PT4", 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, null, 0.00, 0.00, 0.00, 0.00, 0.00, null, null, null},
-        {7,  "001207008830","001207008830","PT4", 5.16, 0.00, 0.00, 0.00, 0.00, 0.00, 7.53, 7.18, 7.18, 0.00, 0.00, 0.00, 0.00, null, null, null},
-        {8,  "001207009704","001207009704","PT4", 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, null, 0.00, 0.00, 0.00, 0.00, 0.00, null, null, null},
-        {9,  "001207011459","001207011459","PT4", 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, null, 0.00, 0.00, 0.00, 0.00, 0.00, null, null, null},
-        {10, "001207012341","001207012341","PT4", 6.07, 0.00, 0.00, 8.77, 0.00, 0.00, 9.64, 9.31, null, 0.00, 0.00, 0.00, 0.00, null, null, null},
-        {11, "001207012439","001207012439","PT4", 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, null, 0.00, 0.00, 0.00, 0.00, 0.00, null, null, null},
-        {12, "001207012684","001207012684","PT4", 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, null, 0.00, 0.00, 0.00, 0.00, 0.00, null, null, null},
-        // VSAT samples
-        {50, "001207050001","001207050001","PT2", null, null, null, null, null, null, null, null, null, null, null, null, null, null, 750.0, null},
-        {51, "001207050002","001207050002","PT2", null, null, null, null, null, null, null, null, null, null, null, null, null, null, 820.0, null},
-        // DGNL samples
-        {100,"001207100001","001207100001","PT3", null, null, null, null, null, null, null, null, null, null, null, null, null, 920.0, null, null},
-    };
+    private static List<DiemThiSinh> DATA = DiemThiSinhDAO.getAllCandidateScores();
+    static {
+        DATA.sort((a, b) -> Integer.compare(a.getIddiemthi(), b.getIddiemthi()));
+    }
 
     public DiemThiPanel(MainFrame mainFrame) {
         super(mainFrame);
@@ -50,32 +52,48 @@ public class DiemThiPanel extends BasePanel {
     }
 
     private void buildUI() {
-        RoundButton btnImport = RoundButton.secondary("Import Excel");
-        RoundButton btnAdd    = RoundButton.primary("+ Thêm điểm");
-        btnImport.addActionListener(e -> showImport());
-        btnAdd.addActionListener(e -> showAddDialog());
-
-        cboPhuongThuc = UIComponents.comboBox(
-            "Tất cả phương thức",
-            "PT4 — THPT Quốc gia",
-            "PT2 — V-SAT 2025",
-            "PT3 — ĐGNL"
-        );
-        cboPhuongThuc.addActionListener(e -> filterByPhuongThuc());
+        RoundButton btnImport = RoundButton.secondary("Import Excel(THPT)");
+        RoundButton btnImportDgnl = RoundButton.secondary("Import Excel(ĐGNL, V-SAT)");
+        RoundButton btnAdd = RoundButton.primary("+ Thêm điểm");
+        btnImport.addActionListener(e -> showImportDialog("THPT"));
+        btnImportDgnl.addActionListener(e -> showImportDialog("ĐGNL, V-SAT"));
+        btnAdd.addActionListener(e -> {
+            DiemThiSinh newScore = DiemThiSinhDialog.showDialog(mainFrame, null);
+            if (newScore != null) {
+                DATA.add(newScore);
+                DATA.sort((a, b) -> Integer.compare(a.getIddiemthi(), b.getIddiemthi()));
+                loadData(DATA);
+            }
+        });
 
         JPanel topBar = buildTopBar(
-            "Điểm thi",
-            "Điểm THPT, ĐGNL, V-SAT (quy đổi thang 30 khi xét tuyển)",
-            cboPhuongThuc, btnImport, btnAdd
-        );
+                "Điểm thi",
+                "Điểm THPT, ĐGNL, V-SAT (quy đổi thang 30 khi xét tuyển)", btnImport, btnImportDgnl, btnAdd);
 
         JPanel statRow = new JPanel(new GridLayout(1, 4, 10, 0));
         statRow.setOpaque(false);
         statRow.setBorder(new EmptyBorder(10, 14, 8, 14));
-        statRow.add(UIComponents.statCard("THPT", "12", AppTheme.PRIMARY, "Hồ sơ có điểm"));
-        statRow.add(UIComponents.statCard("V-SAT", "2", AppTheme.GREEN, "Hồ sơ có điểm"));
-        statRow.add(UIComponents.statCard("ĐGNL", "1", AppTheme.AMBER, "Hồ sơ có điểm"));
-        statRow.add(UIComponents.statCard("Môn có điểm", "7", AppTheme.RED, "Theo dữ liệu mẫu"));
+        int THPTCount = 0, VSATCount = 0, DGNLCount = 0;
+        for (DiemThiSinh score : DATA) {
+            if (score.getTo() != null || score.getLi() != null || score.getHo() != null || score.getSi() != null
+                    || score.getSu() != null || score.getDi() != null || score.getVa() != null) {
+                THPTCount++;
+            }
+            if (score.getTO_VS() != null || score.getLI_VS() != null || score.getHO_VS() != null
+                    || score.getSI_VS() != null
+                    || score.getSU_VS() != null || score.getDI_VS() != null || score.getN1_VS() != null
+                    || score.getTO_NL() != null
+                    || score.getLI_NL() != null || score.getHO_NL() != null || score.getVA_NL() != null
+                    || score.getSI_NL() != null || score.getSU_NL() != null || score.getDI_NL() != null) {
+                VSATCount++;
+            }
+            if (score.getNl1() != null || score.getNl2() != null) {
+                DGNLCount++;
+            }
+        }
+        statRow.add(UIComponents.statCard("THPT", String.valueOf(THPTCount), AppTheme.PRIMARY, "Hồ sơ có điểm"));
+        statRow.add(UIComponents.statCard("V-SAT", String.valueOf(VSATCount), AppTheme.GREEN, "Hồ sơ có điểm"));
+        statRow.add(UIComponents.statCard("ĐGNL", String.valueOf(DGNLCount), AppTheme.AMBER, "Hồ sơ có điểm"));
 
         txtSearch = UIComponents.searchField("Tìm CCCD, số báo danh...");
         txtSearch.setPreferredSize(new Dimension(240, 30));
@@ -83,17 +101,18 @@ public class DiemThiPanel extends BasePanel {
         btnSearch.addActionListener(e -> doSearch());
 
         JPanel searchBar = buildSearchBar(
-            new JLabel("  Tìm: "), txtSearch, btnSearch
-        );
+                new JLabel("  Tìm: "), txtSearch, btnSearch);
 
         tableModel = new DefaultTableModel(COLUMNS, 0) {
-            public boolean isCellEditable(int r, int c) { return false; }
+            public boolean isCellEditable(int r, int c) {
+                return false;
+            }
         };
         table = new JTable(tableModel);
         UIComponents.styleTable(table);
         loadData(DATA);
 
-        int[] widths = {55, 110, 110, 75, 45, 45, 45, 45, 45, 45, 45, 55, 55, 50, 50, 45, 50, 45, 50, 50, 80};
+        int[] widths = { 55, 110, 110, 75, 45, 45, 45, 45, 45, 45, 45, 55, 55, 50, 50, 45, 50, 45, 50, 50, 80 };
         for (int i = 0; i < widths.length && i < table.getColumnCount(); i++)
             table.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
 
@@ -108,10 +127,13 @@ public class DiemThiPanel extends BasePanel {
         table.getColumn("Hành động").setCellRenderer(new ActionRenderer());
 
         table.addMouseListener(new MouseAdapter() {
-            @Override public void mouseClicked(MouseEvent e) {
+            @Override
+            public void mouseClicked(MouseEvent e) {
                 int row = table.rowAtPoint(e.getPoint());
                 int col = table.columnAtPoint(e.getPoint());
-                if (col == COLUMNS.length - 1 && row >= 0) handleAction(row, e);
+                if (col == COLUMNS.length - 1 && row >= 0) {
+                    handleRowAction(row, e.getX(), e.getY());
+                }
             }
         });
 
@@ -127,169 +149,88 @@ public class DiemThiPanel extends BasePanel {
         add(new JScrollPane(table), BorderLayout.CENTER);
     }
 
-    private void loadData(Object[][] data) {
+    private void loadData(List<DiemThiSinh> scores) {
         tableModel.setRowCount(0);
-        for (Object[] row : data) {
-            Object[] r = new Object[COLUMNS.length];
-            System.arraycopy(row, 0, r, 0, Math.min(row.length, COLUMNS.length - 1));
-            r[COLUMNS.length - 1] = "actions";
-            tableModel.addRow(r);
+        for (DiemThiSinh score : scores) {
+            Object[] row = {
+                    score.getIddiemthi(),
+                    score.getCccd(),
+                    score.getSobaodanh(),
+                    score.getD_phuongthuc(),
+                    score.getTo(),
+                    score.getLi(),
+                    score.getHo(),
+                    score.getSi(),
+                    score.getSu(),
+                    score.getDi(),
+                    score.getVa(),
+                    score.getN1_thi(),
+                    score.getN1_cc(),
+                    score.getCncn(),
+                    score.getCnnn(),
+                    score.getTi(),
+                    score.getKtpl(),
+                    score.getNk1(),
+                    score.getNk2()
+            };
+            tableModel.addRow(row);
         }
-    }
-
-    private void filterByPhuongThuc() {
-        String sel = cboPhuongThuc.getSelectedItem().toString();
-        if (sel.startsWith("Tất cả")) { loadData(DATA); return; }
-        String pt = sel.startsWith("PT4") ? "PT4" : sel.startsWith("PT2") ? "PT2" : "PT3";
-        java.util.List<Object[]> filtered = new java.util.ArrayList<>();
-        for (Object[] row : DATA)
-            if (row[3].equals(pt)) filtered.add(row);
-        loadData(filtered.toArray(new Object[0][]));
     }
 
     private void doSearch() {
-        JOptionPane.showMessageDialog(this,
-            "(Demo) Tìm theo CCCD/số báo danh và phương thức đã chọn.",
-            "Tìm kiếm", JOptionPane.INFORMATION_MESSAGE);
-    }
+        DATA = DiemThiSinhDAO.getAllCandidateScores();
+        String query = txtSearch.getText().trim().toLowerCase();
 
-    private void handleAction(int row, MouseEvent e) {
-        JPopupMenu menu = new JPopupMenu();
-        JMenuItem edit = new JMenuItem("✏ Sửa điểm");
-        JMenuItem del  = new JMenuItem("🗑 Xóa");
-        edit.addActionListener(ev -> showEditDialog(row));
-        del.addActionListener(ev -> tableModel.removeRow(row));
-        menu.add(edit); menu.addSeparator(); menu.add(del);
-        menu.show(table, e.getX(), e.getY());
-    }
+        filteredData = new ArrayList<>();
+        for (DiemThiSinh score : DATA) {
+            boolean matchesQuery = query.isEmpty() ||
+                    (score.getCccd() != null && score.getCccd().toLowerCase().contains(query)) ||
+                    (score.getSobaodanh() != null && score.getSobaodanh().toLowerCase().contains(query));
 
-    private void showAddDialog() { showDialog(-1); }
-    private void showEditDialog(int row) { showDialog(row); }
-
-    private void showDialog(int row) {
-        boolean isEdit = row >= 0;
-        JDialog d = new JDialog(SwingUtilities.getWindowAncestor(this),
-            isEdit ? "Sửa điểm thi" : "Thêm điểm thi",
-            java.awt.Dialog.ModalityType.APPLICATION_MODAL);
-        d.setSize(520, 480);
-        d.setLocationRelativeTo(this);
-
-        JPanel body = new JPanel(new GridBagLayout());
-        body.setBorder(new EmptyBorder(14, 18, 14, 18));
-        body.setBackground(AppTheme.BG_PRIMARY);
-        GridBagConstraints gc = new GridBagConstraints();
-        gc.insets = new Insets(4, 5, 4, 5);
-        gc.fill = GridBagConstraints.HORIZONTAL;
-
-        String cccd = isEdit ? tableModel.getValueAt(row, 1).toString() : "";
-        String sbd  = isEdit ? tableModel.getValueAt(row, 2).toString() : "";
-        String pt   = isEdit ? tableModel.getValueAt(row, 3).toString() : "PT4";
-
-        String[][] fields = {
-            {"CCCD:", cccd},
-            {"Số báo danh:", sbd},
-            {"Phương thức:", pt},
-            {"Toán:", isEdit ? nullSafe(tableModel.getValueAt(row, 4)) : ""},
-            {"Ngữ văn:", isEdit ? nullSafe(tableModel.getValueAt(row, 10)) : ""},
-            {"Vật lý:", isEdit ? nullSafe(tableModel.getValueAt(row, 5)) : ""},
-            {"Hóa học:", isEdit ? nullSafe(tableModel.getValueAt(row, 6)) : ""},
-            {"Sinh học:", isEdit ? nullSafe(tableModel.getValueAt(row, 7)) : ""},
-            {"Lịch sử:", isEdit ? nullSafe(tableModel.getValueAt(row, 8)) : ""},
-            {"Địa lý:", isEdit ? nullSafe(tableModel.getValueAt(row, 9)) : ""},
-            {"Tiếng Anh (thi):", isEdit ? nullSafe(tableModel.getValueAt(row, 11)) : ""},
-            {"Tiếng Anh (chứng chỉ):", isEdit ? nullSafe(tableModel.getValueAt(row, 12)) : ""},
-            {"Năng khiếu 1:", isEdit ? nullSafe(tableModel.getValueAt(row, 18)) : ""},
-            {"Năng khiếu 2:", isEdit ? nullSafe(tableModel.getValueAt(row, 19)) : ""},
-        };
-        JTextField[] tfs = new JTextField[fields.length];
-        for (int i = 0; i < fields.length; i++) {
-            int col = i % 2, rowIdx = i / 2;
-            gc.gridx = col * 2; gc.gridy = rowIdx; gc.weightx = 0.3;
-            body.add(UIComponents.formLabel(fields[i][0]), gc);
-            gc.gridx = col * 2 + 1; gc.weightx = 0.5;
-            tfs[i] = UIComponents.formField(fields[i][1]);
-            body.add(tfs[i], gc);
+            if (matchesQuery) {
+                filteredData.add(score);
+            }
         }
-
-        JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
-        footer.setBackground(AppTheme.BG_SECONDARY);
-        footer.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, AppTheme.BORDER));
-        RoundButton cancel = RoundButton.secondary("Hủy");
-        RoundButton save   = RoundButton.primary("Lưu điểm");
-        cancel.addActionListener(e -> d.dispose());
-        save.addActionListener(e -> {
-            JOptionPane.showMessageDialog(d,
-                "→ diemThiDAO.save(cccd=" + tfs[0].getText() + ", phuongThuc=" + tfs[2].getText() + ")",
-                "Đã lưu", JOptionPane.INFORMATION_MESSAGE);
-            d.dispose();
-        });
-        footer.add(cancel); footer.add(save);
-        d.setLayout(new BorderLayout());
-        d.add(new JScrollPane(body), BorderLayout.CENTER);
-        d.add(footer, BorderLayout.SOUTH);
-        d.setVisible(true);
+        if (query == "") {
+            filteredData = DATA;
+        }
+        loadData(filteredData);
     }
 
-    private String nullSafe(Object o) { return o == null ? "" : o.toString(); }
-
-    private void showImport() {
-        JDialog d = new JDialog(SwingUtilities.getWindowAncestor(this), "Import điểm thi", java.awt.Dialog.ModalityType.APPLICATION_MODAL);
-        d.setSize(380, 220);
-        d.setLocationRelativeTo(this);
-        JPanel body = new JPanel(new GridBagLayout());
-        body.setBorder(new EmptyBorder(16, 20, 16, 20));
-        body.setBackground(AppTheme.BG_PRIMARY);
-        GridBagConstraints gc = new GridBagConstraints();
-        gc.insets = new Insets(6, 5, 6, 5);
-        gc.fill = GridBagConstraints.HORIZONTAL;
-
-        gc.gridx=0; gc.gridy=0; gc.weightx=0.4;
-        body.add(UIComponents.formLabel("Loại điểm:"), gc);
-        gc.gridx=1; gc.weightx=0.6;
-        JComboBox<String> cbo = UIComponents.comboBox("PT4 — THPT QG", "PT2 — V-SAT", "PT3 — ĐGNL");
-        body.add(cbo, gc);
-
-        gc.gridx=0; gc.gridy=1;
-        body.add(UIComponents.formLabel("File Excel (.xlsx):"), gc);
-        gc.gridx=1;
-        JButton btnFile = new JButton("Chọn file...");
-        btnFile.setFont(AppTheme.FONT_BODY);
-        body.add(btnFile, gc);
-
-        JLabel lblFile = new JLabel("");
-        lblFile.setFont(AppTheme.FONT_SMALL);
-        lblFile.setForeground(AppTheme.TEXT_SECOND);
-        gc.gridx=0; gc.gridy=2; gc.gridwidth=2;
-        body.add(lblFile, gc);
-
-        btnFile.addActionListener(e -> {
-            JFileChooser fc = new JFileChooser();
-            fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("Excel", "xlsx","xls"));
-            if (fc.showOpenDialog(d) == JFileChooser.APPROVE_OPTION)
-                lblFile.setText(fc.getSelectedFile().getName());
+    private void handleRowAction(int row, int x, int y) {
+        JPopupMenu menu = new JPopupMenu();
+        JMenuItem view = new JMenuItem("👁 Xem chi tiết");
+        JMenuItem edit = new JMenuItem("✏ Sửa điểm");
+        JMenuItem del = new JMenuItem("🗑 Xóa");
+        view.addActionListener(e -> {
+            Object cccdObj = tableModel.getValueAt(row, 1);
+            DiemThiSinhDialog.showDetailDialog(mainFrame, String.valueOf(cccdObj));
         });
-
-        JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
-        footer.setBackground(AppTheme.BG_SECONDARY);
-        footer.setBorder(BorderFactory.createMatteBorder(1,0,0,0, AppTheme.BORDER));
-        RoundButton cancel = RoundButton.secondary("Hủy");
-        RoundButton imp    = RoundButton.primary("Import");
-        cancel.addActionListener(e -> d.dispose());
-        imp.addActionListener(e -> {
-            JOptionPane.showMessageDialog(d, "(Demo) Sẽ import danh sách điểm theo loại đã chọn.", "Import", JOptionPane.INFORMATION_MESSAGE);
-            d.dispose();
+        edit.addActionListener(e -> {
+            Object cccdObj = tableModel.getValueAt(row, 1);
+            DiemThiSinhDialog.showDialog(mainFrame, String.valueOf(cccdObj));
         });
-        footer.add(cancel); footer.add(imp);
-        d.setLayout(new BorderLayout());
-        d.add(body, BorderLayout.CENTER);
-        d.add(footer, BorderLayout.SOUTH);
-        d.setVisible(true);
+        del.addActionListener(e -> {
+            Object cccdObj = tableModel.getValueAt(row, 1);
+            DiemThiSinhDAO.deleteCandidateScore(DiemThiSinhDAO.getCandidateScoreByCCCD(String.valueOf(cccdObj)));
+
+            tableModel.removeRow(row);
+        });
+        menu.add(view);
+        menu.add(edit);
+        menu.addSeparator();
+        menu.add(del);
+        menu.show(table, x, y);
     }
 
     // Score cell renderer: null → "NULL" in gray, 0 → "0" in light, value → bold
     static class ScoreCellRenderer extends DefaultTableCellRenderer {
-        public ScoreCellRenderer() { setHorizontalAlignment(SwingConstants.CENTER); }
-        @Override public Component getTableCellRendererComponent(JTable t, Object v,
+        public ScoreCellRenderer() {
+            setHorizontalAlignment(SwingConstants.CENTER);
+        }
+
+        @Override
+        public Component getTableCellRendererComponent(JTable t, Object v,
                 boolean sel, boolean foc, int row, int col) {
             Component c = super.getTableCellRendererComponent(t, v, sel, foc, row, col);
             if (v == null) {
@@ -299,23 +240,40 @@ public class DiemThiPanel extends BasePanel {
             } else {
                 double d = Double.parseDouble(v.toString());
                 setText(String.format("%.2f", d));
-                if (d == 0) { setForeground(AppTheme.TEXT_THIRD); setFont(AppTheme.FONT_SMALL); }
-                else { setForeground(AppTheme.TEXT_PRIMARY); setFont(AppTheme.FONT_BOLD); }
+                if (d == 0) {
+                    setForeground(AppTheme.TEXT_THIRD);
+                    setFont(AppTheme.FONT_SMALL);
+                } else {
+                    setForeground(AppTheme.TEXT_PRIMARY);
+                    setFont(AppTheme.FONT_BOLD);
+                }
             }
-            if (!sel) setBackground(row % 2 == 0 ? AppTheme.BG_PRIMARY : AppTheme.BG_SECONDARY);
+            if (!sel)
+                setBackground(row % 2 == 0 ? AppTheme.BG_PRIMARY : AppTheme.BG_SECONDARY);
             return c;
         }
     }
 
     static class PhuongThucRenderer extends DefaultTableCellRenderer {
-        @Override public Component getTableCellRendererComponent(JTable t, Object v,
+        @Override
+        public Component getTableCellRendererComponent(JTable t, Object v,
                 boolean sel, boolean foc, int row, int col) {
             super.getTableCellRendererComponent(t, v, sel, foc, row, col);
-            if ("PT4".equals(v)) { setForeground(AppTheme.PRIMARY); setBackground(AppTheme.PRIMARY_LIGHT); }
-            else if ("PT2".equals(v)) { setForeground(AppTheme.GREEN); setBackground(AppTheme.GREEN_LIGHT); }
-            else if ("PT3".equals(v)) { setForeground(AppTheme.AMBER); setBackground(AppTheme.AMBER_LIGHT); }
-            else { setForeground(AppTheme.TEXT_SECOND); setBackground(AppTheme.BG_SECONDARY); }
-            if (sel) setBackground(AppTheme.PRIMARY_LIGHT);
+            if ("PT4".equals(v)) {
+                setForeground(AppTheme.PRIMARY);
+                setBackground(AppTheme.PRIMARY_LIGHT);
+            } else if ("PT2".equals(v)) {
+                setForeground(AppTheme.GREEN);
+                setBackground(AppTheme.GREEN_LIGHT);
+            } else if ("PT3".equals(v)) {
+                setForeground(AppTheme.AMBER);
+                setBackground(AppTheme.AMBER_LIGHT);
+            } else {
+                setForeground(AppTheme.TEXT_SECOND);
+                setBackground(AppTheme.BG_SECONDARY);
+            }
+            if (sel)
+                setBackground(AppTheme.PRIMARY_LIGHT);
             setHorizontalAlignment(SwingConstants.CENTER);
             setFont(AppTheme.FONT_SMALL);
             return this;
@@ -323,22 +281,221 @@ public class DiemThiPanel extends BasePanel {
     }
 
     static class ActionRenderer extends DefaultTableCellRenderer {
-        private JPanel panel;
+        private final JPanel panel;
+
         public ActionRenderer() {
             panel = new JPanel(new FlowLayout(FlowLayout.CENTER, 3, 2));
             panel.setOpaque(true);
-            JButton e = new JButton("Sửa"); e.setFont(AppTheme.FONT_SMALL);
-            e.setBackground(AppTheme.BG_SECONDARY); e.setForeground(AppTheme.TEXT_PRIMARY);
-            e.setBorder(BorderFactory.createLineBorder(AppTheme.BORDER)); e.setFocusPainted(false);
-            JButton d = new JButton("Xóa"); d.setFont(AppTheme.FONT_SMALL);
-            d.setBackground(AppTheme.RED_LIGHT); d.setForeground(AppTheme.RED);
-            d.setBorder(BorderFactory.createLineBorder(AppTheme.RED_LIGHT)); d.setFocusPainted(false);
-            panel.add(e); panel.add(d);
+            JButton btnmenu = new JButton(new DrawHamburger());
+            btnmenu.setFocusPainted(false);
+            panel.add(btnmenu);
         }
-        @Override public Component getTableCellRendererComponent(JTable t, Object v,
-                boolean sel, boolean foc, int row, int col) {
+
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value,
+                boolean selected, boolean focused, int row, int col) {
             panel.setBackground(row % 2 == 0 ? AppTheme.BG_PRIMARY : AppTheme.BG_SECONDARY);
             return panel;
         }
     }
+
+    private void showImportDialog(String LoaiDiem) {
+        JFileChooser fc = new JFileChooser();
+        fc.setDialogTitle("Chọn file Excel — Thí sinh (" + LoaiDiem + ")");
+        fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("Excel (*.xlsx, *.xls)", "xlsx", "xls"));
+        if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            if (LoaiDiem.equals("THPT")) {
+                readFileScoreCandidate(fc.getSelectedFile().getAbsolutePath());
+            } else {
+                readFileScoreCandidateDgnl(fc.getSelectedFile().getAbsolutePath());
+            }
+            doSearch();
+        }
+    }
+
+    public static void readFileScoreCandidate(String filePath) {
+        // 1. Mở file Excel
+        try {
+            FileInputStream fis = new FileInputStream(new File(filePath));
+            Workbook workbook = WorkbookFactory.create(fis);
+
+            // 2. Lấy Sheet đầu tiên (index 0)
+            Sheet sheet = workbook.getSheetAt(0);
+
+            int sbdColIndex = 1; // Assuming CCCD is in the second column (index 1)
+
+            // 3. Duyệt qua từng dòng (Row)
+            for (Row row : sheet) {
+                // Bỏ qua dòng tiêu đề (nếu có)
+                if (row.getRowNum() == 0) {
+                    continue;
+                }
+                // 4. Tạo đối tượng CandidateScore từ dữ liệu trong dòng
+                DiemThiSinh candidatesScore = new DiemThiSinh();
+
+                if (DiemThiSinhDAO.getCandidateScoreByCCCD(row.getCell(1).getStringCellValue()) != null) {
+                    DiemThiSinh existingScore = DiemThiSinhDAO
+                            .getCandidateScoreByCCCD(row.getCell(1).getStringCellValue());
+                    ThiSinh candidate = ThiSinhDAO.getCandidateByCCCD(row.getCell(1).getStringCellValue());
+                    candidatesScore.setIddiemthi(existingScore.getIddiemthi());
+                    candidatesScore.setSobaodanh(candidate.getSobaodanh());
+
+                    candidatesScore = existingScore; // Preserve existing scores for fields not in the Excel, to avoid
+                                                     // overwriting with nulls
+                }
+
+                candidatesScore.setCccd(row.getCell(1).getStringCellValue());
+                candidatesScore.setSobaodanh("00000000" + sbdColIndex++);
+                candidatesScore.setD_phuongthuc("");
+                candidatesScore.setTo(BigDecimal.valueOf(row.getCell(7).getNumericCellValue()));
+                candidatesScore.setVa(BigDecimal.valueOf(row.getCell(8).getNumericCellValue()));
+                candidatesScore.setLi(BigDecimal.valueOf(row.getCell(9).getNumericCellValue()));
+                candidatesScore.setHo(BigDecimal.valueOf(row.getCell(10).getNumericCellValue()));
+                candidatesScore.setSi(BigDecimal.valueOf(row.getCell(11).getNumericCellValue()));
+                candidatesScore.setSu(BigDecimal.valueOf(row.getCell(12).getNumericCellValue()));
+                candidatesScore.setDi(BigDecimal.valueOf(row.getCell(13).getNumericCellValue()));
+                candidatesScore.setN1_thi(BigDecimal.valueOf(0.0));
+                candidatesScore.setN1_cc(BigDecimal.valueOf(0.0));
+                candidatesScore.setCncn(BigDecimal.valueOf(row.getCell(19).getNumericCellValue()));
+                candidatesScore.setCnnn(BigDecimal.valueOf(row.getCell(20).getNumericCellValue()));
+                candidatesScore.setTi(BigDecimal.valueOf(row.getCell(18).getNumericCellValue()));
+                candidatesScore.setKtpl(BigDecimal.valueOf(row.getCell(17).getNumericCellValue()));
+                candidatesScore.setNk1(BigDecimal.valueOf(row.getCell(22).getNumericCellValue()));
+                candidatesScore.setNk2(BigDecimal.valueOf(row.getCell(23).getNumericCellValue()));
+
+                DiemThiSinhDAO.createCandidateScore(candidatesScore);
+            }
+
+            workbook.close();
+            fis.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+            System.out.println("Lỗi khi đọc file Excel!");
+        }
+    }
+
+    public static void readFileScoreCandidateDgnl(String filePath) {
+        // 1. Mở file Excel
+        try {
+            FileInputStream fis = new FileInputStream(new File(filePath));
+            Workbook workbook = WorkbookFactory.create(fis);
+
+            // 2. Lấy Sheet đầu tiên (index 0)
+            Sheet sheet = workbook.getSheetAt(0);
+
+            // 3. Duyệt qua từng dòng (Row)
+            for (Row row : sheet) {
+                // Bỏ qua dòng tiêu đề (nếu có)
+                if (row.getRowNum() == 0) {
+                    continue;
+                }
+                // 4. Tạo đối tượng CandidateScore từ dữ liệu trong dòng
+                DiemThiSinh candidatesScore = new DiemThiSinh();
+
+                if (DiemThiSinhDAO.getCandidateScoreByCCCD(row.getCell(1).getStringCellValue()) != null) {
+                    DiemThiSinh existingScore = DiemThiSinhDAO
+                            .getCandidateScoreByCCCD(row.getCell(1).getStringCellValue());
+                    ThiSinh candidate = ThiSinhDAO.getCandidateByCCCD(row.getCell(1).getStringCellValue());
+                    candidatesScore.setIddiemthi(existingScore.getIddiemthi());
+                    candidatesScore.setSobaodanh(candidate.getSobaodanh());
+
+                    candidatesScore = existingScore;
+                }
+
+                candidatesScore.setCccd(row.getCell(1).getStringCellValue());
+                switch (row.getCell(6).getStringCellValue()) {
+                    case "M1":
+                        candidatesScore.setTO_NL(BigDecimal.valueOf(row.getCell(8).getNumericCellValue()));
+                        break;
+                    case "M2":
+                        candidatesScore.setLI_NL(BigDecimal.valueOf(row.getCell(8).getNumericCellValue()));
+                        break;
+                    case "M3":
+                        candidatesScore.setHO_NL(BigDecimal.valueOf(row.getCell(8).getNumericCellValue()));
+                        break;
+                    case "M4":
+                        candidatesScore.setVA_NL(BigDecimal.valueOf(row.getCell(8).getNumericCellValue()));
+                        break;
+                    case "M5":
+                        candidatesScore.setSI_NL(BigDecimal.valueOf(row.getCell(8).getNumericCellValue()));
+                        break;
+                    case "M6":
+                        candidatesScore.setSU_NL(BigDecimal.valueOf(row.getCell(8).getNumericCellValue()));
+                        break;
+                    case "M7":
+                        candidatesScore.setDI_NL(BigDecimal.valueOf(row.getCell(8).getNumericCellValue()));
+                        break;
+                    case "M8":
+                        candidatesScore.setN1_NL(BigDecimal.valueOf(row.getCell(8).getNumericCellValue()));
+                        break;
+                    case "TO_VS":
+                        candidatesScore.setTO_VS(BigDecimal.valueOf(row.getCell(8).getNumericCellValue()));
+                        break;
+                    case "LI_VS":
+                        candidatesScore.setLI_VS(BigDecimal.valueOf(row.getCell(8).getNumericCellValue()));
+                        break;
+                    case "HO_VS":
+                        candidatesScore.setHO_VS(BigDecimal.valueOf(row.getCell(8).getNumericCellValue()));
+                        break;
+                    case "VA_VS":
+                        candidatesScore.setVA_VS(BigDecimal.valueOf(row.getCell(8).getNumericCellValue()));
+                        break;
+                    case "SI_VS":
+                        candidatesScore.setSI_VS(BigDecimal.valueOf(row.getCell(8).getNumericCellValue()));
+                        break;
+                    case "SU_VS":
+                        candidatesScore.setSU_VS(BigDecimal.valueOf(row.getCell(8).getNumericCellValue()));
+                        break;
+                    case "DI_VS":
+                        candidatesScore.setDI_VS(BigDecimal.valueOf(row.getCell(8).getNumericCellValue()));
+                        break;
+                    case "N1_VS":
+                        candidatesScore.setN1_VS(BigDecimal.valueOf(row.getCell(8).getNumericCellValue()));
+                        break;
+                    default:
+                        break;
+                }
+
+                DiemThiSinhDAO.createCandidateScore(candidatesScore);
+            }
+
+            Sheet sheet1 = workbook.getSheetAt(1);
+
+            for (Row row : sheet1) {
+                // Bỏ qua dòng tiêu đề (nếu có)
+                if (row.getRowNum() == 0) {
+                    continue;
+                }
+
+                DiemThiSinh candidatesScore = new DiemThiSinh();
+
+                if (DiemThiSinhDAO.getCandidateScoreByCCCD(row.getCell(1).getStringCellValue()) != null) {
+                    DiemThiSinh existingScore = DiemThiSinhDAO
+                            .getCandidateScoreByCCCD(row.getCell(1).getStringCellValue());
+                    ThiSinh candidate = ThiSinhDAO.getCandidateByCCCD(row.getCell(1).getStringCellValue());
+                    candidatesScore.setIddiemthi(existingScore.getIddiemthi());
+                    candidatesScore.setSobaodanh(candidate.getSobaodanh());
+
+                    candidatesScore = existingScore;
+                }
+
+                candidatesScore.setCccd(row.getCell(1).getStringCellValue());
+                switch (row.getCell(3).getStringCellValue()) {
+                    case "1":
+                        candidatesScore.setNl1(BigDecimal.valueOf(row.getCell(8).getNumericCellValue()));
+                        break;
+                    case "2":
+                        candidatesScore.setNl2(BigDecimal.valueOf(row.getCell(8).getNumericCellValue()));
+                        break;
+                    default:
+                        break;
+                }
+                DiemThiSinhDAO.createCandidateScore(candidatesScore);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            System.out.println("Lỗi khi đọc file Excel!");
+        }
+    }
+
 }
