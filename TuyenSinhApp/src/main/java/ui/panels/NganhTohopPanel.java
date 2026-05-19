@@ -77,7 +77,10 @@ public class NganhTohopPanel extends BasePanel {
         );
 
         tableModel = new DefaultTableModel(COLUMNS, 0) {
-            public boolean isCellEditable(int r, int c) { return false; }
+            @Override
+            public boolean isCellEditable(int r, int c) {
+                return c == COLUMNS.length - 1;
+            }
         };
         table = new JTable(tableModel);
         UIComponents.styleTable(table);
@@ -92,14 +95,8 @@ public class NganhTohopPanel extends BasePanel {
         cr.setHorizontalAlignment(SwingConstants.CENTER);
         for (int i : new int[]{4, 6, 8, 10}) table.getColumnModel().getColumn(i).setCellRenderer(cr);
 
-        table.getColumn("Hành động").setCellRenderer(new ActionRenderer());
-        table.addMouseListener(new MouseAdapter() {
-            @Override public void mouseClicked(MouseEvent e) {
-                int row = table.rowAtPoint(e.getPoint());
-                int col = table.columnAtPoint(e.getPoint());
-                if (col == COLUMNS.length - 1 && row >= 0) handleAction(row, e);
-            }
-        });
+        table.getColumn("Hành động").setCellRenderer(new ActionPanelRenderer());
+        table.getColumn("Hành động").setCellEditor(new ActionPanelEditor());
 
         JPanel topSection = new JPanel(new BorderLayout());
         topSection.add(topBar, BorderLayout.NORTH);
@@ -169,6 +166,10 @@ public class NganhTohopPanel extends BasePanel {
         fillTable(filtered);
     }
 
+    private String safeStr(Object o, String fallback) {
+        return o == null ? fallback : o.toString().trim();
+    }
+
     private void showDialog(int row) {
         boolean isEdit = row >= 0;
         JDialog d = new JDialog(SwingUtilities.getWindowAncestor(this),
@@ -184,15 +185,15 @@ public class NganhTohopPanel extends BasePanel {
         gc.insets = new Insets(5, 5, 5, 5);
         gc.fill = GridBagConstraints.HORIZONTAL;
 
-        String ma  = isEdit ? tableModel.getValueAt(row, 1).toString() : "";
-        String mth = isEdit ? tableModel.getValueAt(row, 2).toString() : "";
-        String m1  = isEdit ? tableModel.getValueAt(row, 3).toString() : "";
-        String h1  = isEdit ? tableModel.getValueAt(row, 4).toString() : "3";
-        String m2  = isEdit ? tableModel.getValueAt(row, 5).toString() : "";
-        String h2  = isEdit ? tableModel.getValueAt(row, 6).toString() : "3";
-        String m3  = isEdit ? tableModel.getValueAt(row, 7).toString() : "";
-        String h3  = isEdit ? tableModel.getValueAt(row, 8).toString() : "1";
-        String dl  = isEdit ? tableModel.getValueAt(row, 10).toString() : "0.00";
+        String ma  = isEdit ? safeStr(tableModel.getValueAt(row, 1), "") : "";
+        String mth = isEdit ? safeStr(tableModel.getValueAt(row, 2), "") : "";
+        String m1  = isEdit ? safeStr(tableModel.getValueAt(row, 3), "") : "";
+        String h1  = isEdit ? safeStr(tableModel.getValueAt(row, 4), "1") : "1";
+        String m2  = isEdit ? safeStr(tableModel.getValueAt(row, 5), "") : "";
+        String h2  = isEdit ? safeStr(tableModel.getValueAt(row, 6), "1") : "1";
+        String m3  = isEdit ? safeStr(tableModel.getValueAt(row, 7), "") : "";
+        String h3  = isEdit ? safeStr(tableModel.getValueAt(row, 8), "1") : "1";
+        String dl  = isEdit ? safeStr(tableModel.getValueAt(row, 10), "0.00") : "0.00";
 
         JTextField[] tfs = new JTextField[7];
         String[][] fields = {
@@ -215,28 +216,28 @@ public class NganhTohopPanel extends BasePanel {
         gc.gridx = 0; gc.gridy = 0; gc.weightx = 0.4;
         body.add(UIComponents.formLabel("Mã ngành:"), gc);
         gc.gridx = 1; gc.weightx = 0.6;
-        JComboBox<String> cboNganh = UIComponents.comboBox("Chọn ngành");
-        loadNganhOptions(cboNganh, ma);
-        body.add(cboNganh, gc);
+        JComboBox<String> cboNganhDlg = UIComponents.comboBox("Chọn ngành");
+        loadNganhOptions(cboNganhDlg, ma);
+        body.add(cboNganhDlg, gc);
 
         gc.gridx = 0; gc.gridy = 1; gc.weightx = 0.4;
         body.add(UIComponents.formLabel("Mã tổ hợp:"), gc);
         gc.gridx = 1; gc.weightx = 0.6;
-        JComboBox<String> cboToHop = UIComponents.comboBox("Chọn tổ hợp");
-        loadToHopOptions(cboToHop, mth);
-        body.add(cboToHop, gc);
+        JComboBox<String> cboToHopDlg = UIComponents.comboBox("Chọn tổ hợp");
+        loadToHopOptions(cboToHopDlg, mth);
+        body.add(cboToHopDlg, gc);
 
         // Lock subject fields and auto-fill from to hop mon
         for (int i : new int[]{0, 2, 4}) {
             tfs[i].setEditable(false);
             tfs[i].setBackground(AppTheme.BG_SECONDARY);
         }
-        cboToHop.addActionListener(e -> {
-            String selected = String.valueOf(cboToHop.getSelectedItem());
+        cboToHopDlg.addActionListener(e -> {
+            String selected = String.valueOf(cboToHopDlg.getSelectedItem());
             String maToHop = extractMaToHop(selected);
             fillSubjectsFromToHop(tfs, maToHop);
         });
-        fillSubjectsFromToHop(tfs, extractMaToHop(String.valueOf(cboToHop.getSelectedItem())));
+        fillSubjectsFromToHop(tfs, extractMaToHop(String.valueOf(cboToHopDlg.getSelectedItem())));
 
         JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
         footer.setBackground(AppTheme.BG_SECONDARY);
@@ -251,8 +252,8 @@ public class NganhTohopPanel extends BasePanel {
                     : new NganhTohop();
                 if (entity == null) entity = new NganhTohop();
 
-                String maNganh = extractMaNganh(String.valueOf(cboNganh.getSelectedItem()));
-                String maToHop = extractMaToHop(String.valueOf(cboToHop.getSelectedItem()));
+                String maNganh = extractMaNganh(String.valueOf(cboNganhDlg.getSelectedItem()));
+                String maToHop = extractMaToHop(String.valueOf(cboToHopDlg.getSelectedItem()));
 
                 if (maNganh.isEmpty() || maToHop.isEmpty()) {
                     JOptionPane.showMessageDialog(d,
@@ -439,31 +440,21 @@ public class NganhTohopPanel extends BasePanel {
         return row[idx] == null ? "" : row[idx].trim();
     }
 
-    private void handleAction(int row, MouseEvent e) {
-        JPopupMenu menu = new JPopupMenu();
-        JMenuItem edit = new JMenuItem("✏ Sửa");
-        JMenuItem del  = new JMenuItem("🗑 Xóa");
-        edit.addActionListener(ev -> showDialog(row));
-        del.addActionListener(ev -> {
-            int c = JOptionPane.showConfirmDialog(this,
-                "Xóa ngành - tổ hợp: " + tableModel.getValueAt(row, 1) + "?",
-                "Xác nhận", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-            if (c == JOptionPane.YES_OPTION) {
-                try {
-                    Integer id = Integer.valueOf(tableModel.getValueAt(row, 0).toString());
-                    nganhTohopDAO.deleteById(id);
-                    reloadData();
-                } catch (Exception ex) {
-                    JOptionPane.showMessageDialog(this,
-                        "Không thể xóa dữ liệu. Kiểm tra ràng buộc DB.",
-                        "Lỗi", JOptionPane.ERROR_MESSAGE);
-                }
+    private void confirmDelete(int row) {
+        int c = JOptionPane.showConfirmDialog(this,
+            "Xóa ngành - tổ hợp: " + tableModel.getValueAt(row, 1) + "?",
+            "Xác nhận", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (c == JOptionPane.YES_OPTION) {
+            try {
+                Integer id = Integer.valueOf(tableModel.getValueAt(row, 0).toString());
+                nganhTohopDAO.deleteById(id);
+                reloadData();
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this,
+                    "Không thể xóa dữ liệu. Kiểm tra ràng buộc DB.",
+                    "Lỗi", JOptionPane.ERROR_MESSAGE);
             }
-        });
-        menu.add(edit);
-        menu.addSeparator();
-        menu.add(del);
-        menu.show(table, e.getX(), e.getY());
+        }
     }
 
     private void applySubjectFlags(NganhTohop entity) {
@@ -568,23 +559,81 @@ public class NganhTohopPanel extends BasePanel {
         return idx > 0 ? s.substring(0, idx).trim() : s;
     }
 
-    static class ActionRenderer extends DefaultTableCellRenderer {
-        private JPanel panel;
-        public ActionRenderer() {
-            panel = new JPanel(new FlowLayout(FlowLayout.CENTER, 3, 2));
-            panel.setOpaque(true);
-            JButton e = new JButton("Sửa"); e.setFont(AppTheme.FONT_SMALL);
-            e.setBackground(AppTheme.BG_SECONDARY); e.setForeground(AppTheme.TEXT_PRIMARY);
-            e.setBorder(BorderFactory.createLineBorder(AppTheme.BORDER)); e.setFocusPainted(false);
-            JButton d = new JButton("Xóa"); d.setFont(AppTheme.FONT_SMALL);
-            d.setBackground(AppTheme.RED_LIGHT); d.setForeground(AppTheme.RED);
-            d.setBorder(BorderFactory.createLineBorder(AppTheme.RED_LIGHT)); d.setFocusPainted(false);
-            panel.add(e); panel.add(d);
+    // --- Nút Sửa / Xóa trên từng dòng ---
+
+    class ActionPanelRenderer extends JPanel implements TableCellRenderer {
+        private final JButton btnSua = actionButton("Sửa", false);
+        private final JButton btnXoa = actionButton("Xóa", true);
+
+        ActionPanelRenderer() {
+            setLayout(new FlowLayout(FlowLayout.CENTER, 4, 2));
+            setOpaque(true);
+            add(btnSua);
+            add(btnXoa);
         }
-        @Override public Component getTableCellRendererComponent(JTable t, Object v,
-                boolean sel, boolean foc, int row, int col) {
-            panel.setBackground(row % 2 == 0 ? AppTheme.BG_PRIMARY : AppTheme.BG_SECONDARY);
+
+        @Override
+        public Component getTableCellRendererComponent(JTable tbl, Object value,
+                boolean selected, boolean focus, int row, int column) {
+            setBackground(selected ? tbl.getSelectionBackground()
+                : (row % 2 == 0 ? AppTheme.BG_PRIMARY : AppTheme.BG_SECONDARY));
+            return this;
+        }
+    }
+
+    class ActionPanelEditor extends AbstractCellEditor implements TableCellEditor {
+        private final JPanel panel = new JPanel(new FlowLayout(FlowLayout.CENTER, 4, 2));
+        private final JButton btnSua = actionButton("Sửa", false);
+        private final JButton btnXoa = actionButton("Xóa", true);
+        private int editingRow = -1;
+
+        ActionPanelEditor() {
+            panel.setOpaque(true);
+            btnSua.addActionListener(e -> {
+                fireEditingStopped();
+                if (editingRow >= 0) {
+                    int modelRow = table.convertRowIndexToModel(editingRow);
+                    showDialog(modelRow);
+                }
+            });
+            btnXoa.addActionListener(e -> {
+                fireEditingStopped();
+                if (editingRow >= 0) {
+                    int modelRow = table.convertRowIndexToModel(editingRow);
+                    confirmDelete(modelRow);
+                }
+            });
+            panel.add(btnSua);
+            panel.add(btnXoa);
+        }
+
+        @Override
+        public Component getTableCellEditorComponent(JTable tbl, Object value,
+                boolean selected, int row, int column) {
+            editingRow = row;
+            panel.setBackground(tbl.getSelectionBackground());
             return panel;
         }
+
+        @Override
+        public Object getCellEditorValue() {
+            return "";
+        }
+    }
+
+    private static JButton actionButton(String text, boolean danger) {
+        JButton b = new JButton(text);
+        b.setFont(AppTheme.FONT_SMALL);
+        b.setFocusPainted(false);
+        if (danger) {
+            b.setBackground(AppTheme.RED_LIGHT);
+            b.setForeground(AppTheme.RED);
+            b.setBorder(BorderFactory.createLineBorder(AppTheme.RED_LIGHT));
+        } else {
+            b.setBackground(AppTheme.BG_SECONDARY);
+            b.setForeground(AppTheme.TEXT_PRIMARY);
+            b.setBorder(BorderFactory.createLineBorder(AppTheme.BORDER));
+        }
+        return b;
     }
 }

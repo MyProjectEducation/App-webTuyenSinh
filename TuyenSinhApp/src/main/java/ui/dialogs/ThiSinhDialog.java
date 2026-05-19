@@ -188,7 +188,7 @@ public class ThiSinhDialog extends JDialog {
         ThiSinh candidate = ThiSinhDAO.getCandidateByCCCD(String.valueOf(cccd));
 
         txtCccd.setText(cccd);
-        txtSbd.setText(cccd);
+        txtSbd.setText(candidate.getSobaodanh());
         txtHo.setText(candidate.getHo());
         txtTen.setText(candidate.getTen());
         txtNgaySinh.setText(candidate.getNgaySinh());

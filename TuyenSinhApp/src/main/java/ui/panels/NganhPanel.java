@@ -4,6 +4,7 @@ import ui.MainFrame;
 import dao.NganhDAO;
 import dao.NganhTohopDAO;
 import entity.Nganh;
+import entity.NguyenVong;
 import ui.components.AppTheme;
 import ui.components.UIComponents;
 import ui.components.UIComponents.RoundButton;
@@ -124,8 +125,29 @@ public class NganhPanel extends BasePanel {
         }
     }
 
+    private Map<String, Long> getAspirationCounts() {
+        Map<String, Long> map = new HashMap<>();
+        try (org.hibernate.Session session = util.HibernateUtil.getSessionFactory().openSession()) {
+            List<?> list = session.createQuery(
+                "select nv.nvManganh, count(nv) from NguyenVong nv group by nv.nvManganh")
+                .list();
+            for (Object obj : list) {
+                if (obj instanceof Object[]) {
+                    Object[] row = (Object[]) obj;
+                    if (row[0] != null) {
+                        map.put(String.valueOf(row[0]).trim(), (Long) row[1]);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return map;
+    }
+
     private void fillTable(List<Nganh> data) {
         tableModel.setRowCount(0);
+        Map<String, Long> countMap = getAspirationCounts();
         for (Nganh nganh : data) {
             Object[] r = new Object[COLUMNS.length];
             r[0] = nganh.getId();
@@ -136,7 +158,7 @@ public class NganhPanel extends BasePanel {
             r[5] = nganh.getDiemSan();
             r[6] = nganh.getDiemTrungTuyen();
             r[7] = buildPhuongThucText(nganh);
-            r[8] = 0;
+            r[8] = countMap.getOrDefault(nganh.getMaNganh(), 0L);
             r[9] = "actions";
             tableModel.addRow(r);
         }

@@ -59,8 +59,8 @@ public class DiemThiPanel extends BasePanel {
         btnImportDgnl.addActionListener(e -> showImportDialog("ĐGNL, V-SAT"));
         btnAdd.addActionListener(e -> {
             DiemThiSinh newScore = DiemThiSinhDialog.showDialog(mainFrame, null);
-            if (newScore != null) {
-                DATA.add(newScore);
+            if (newScore != null && newScore.getCccd() != null && !newScore.getCccd().trim().isEmpty()) {
+                DATA = DiemThiSinhDAO.getAllCandidateScores();
                 DATA.sort((a, b) -> Integer.compare(a.getIddiemthi(), b.getIddiemthi()));
                 loadData(DATA);
             }
@@ -152,19 +152,31 @@ public class DiemThiPanel extends BasePanel {
     private void loadData(List<DiemThiSinh> scores) {
         tableModel.setRowCount(0);
         for (DiemThiSinh score : scores) {
+            String method = score.getD_phuongthuc();
+            boolean isVsat = "PT3".equals(method) || "VSAT".equals(method);
+
+            Object toScore = isVsat ? util.VsatConverter.convert("TO", score.getTO_VS()) : score.getTo();
+            Object liScore = isVsat ? util.VsatConverter.convert("LI", score.getLI_VS()) : score.getLi();
+            Object hoScore = isVsat ? util.VsatConverter.convert("HO", score.getHO_VS()) : score.getHo();
+            Object siScore = isVsat ? util.VsatConverter.convert("SI", score.getSI_VS()) : score.getSi();
+            Object suScore = isVsat ? util.VsatConverter.convert("SU", score.getSU_VS()) : score.getSu();
+            Object diScore = isVsat ? util.VsatConverter.convert("DI", score.getDI_VS()) : score.getDi();
+            Object vaScore = isVsat ? util.VsatConverter.convert("VA", score.getVA_VS()) : score.getVa();
+            Object n1Score = isVsat ? util.VsatConverter.convert("N1", score.getN1_VS()) : score.getN1_thi();
+
             Object[] row = {
                     score.getIddiemthi(),
                     score.getCccd(),
                     score.getSobaodanh(),
                     score.getD_phuongthuc(),
-                    score.getTo(),
-                    score.getLi(),
-                    score.getHo(),
-                    score.getSi(),
-                    score.getSu(),
-                    score.getDi(),
-                    score.getVa(),
-                    score.getN1_thi(),
+                    toScore,
+                    liScore,
+                    hoScore,
+                    siScore,
+                    suScore,
+                    diScore,
+                    vaScore,
+                    n1Score,
                     score.getN1_cc(),
                     score.getCncn(),
                     score.getCnnn(),
@@ -209,6 +221,10 @@ public class DiemThiPanel extends BasePanel {
         edit.addActionListener(e -> {
             Object cccdObj = tableModel.getValueAt(row, 1);
             DiemThiSinhDialog.showDialog(mainFrame, String.valueOf(cccdObj));
+            // Tải lại dữ liệu sau khi sửa để cập nhật điểm mới và cột Phương thức
+            DATA = DiemThiSinhDAO.getAllCandidateScores();
+            DATA.sort((a, b) -> Integer.compare(a.getIddiemthi(), b.getIddiemthi()));
+            loadData(DATA);
         });
         del.addActionListener(e -> {
             Object cccdObj = tableModel.getValueAt(row, 1);
@@ -259,16 +275,20 @@ public class DiemThiPanel extends BasePanel {
         public Component getTableCellRendererComponent(JTable t, Object v,
                 boolean sel, boolean foc, int row, int col) {
             super.getTableCellRendererComponent(t, v, sel, foc, row, col);
-            if ("PT4".equals(v)) {
+            if ("PT4".equals(v) || "ĐGNL".equals(v)) {
+                setText("ĐGNL");
                 setForeground(AppTheme.PRIMARY);
                 setBackground(AppTheme.PRIMARY_LIGHT);
-            } else if ("PT2".equals(v)) {
+            } else if ("PT2".equals(v) || "THPT".equals(v)) {
+                setText("THPT");
                 setForeground(AppTheme.GREEN);
                 setBackground(AppTheme.GREEN_LIGHT);
-            } else if ("PT3".equals(v)) {
+            } else if ("PT3".equals(v) || "VSAT".equals(v)) {
+                setText("VSAT");
                 setForeground(AppTheme.AMBER);
                 setBackground(AppTheme.AMBER_LIGHT);
             } else {
+                setText(v != null ? v.toString() : "");
                 setForeground(AppTheme.TEXT_SECOND);
                 setBackground(AppTheme.BG_SECONDARY);
             }

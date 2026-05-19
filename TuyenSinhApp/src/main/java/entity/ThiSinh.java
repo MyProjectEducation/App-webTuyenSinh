@@ -176,6 +176,8 @@ public class ThiSinh {
     public void setKhuVuc(String khuVuc) {
         if (khuVuc == null || khuVuc.isEmpty()) {
             this.khuVuc = "KV1";
+        } else if (khuVuc.startsWith("KV")) {
+            this.khuVuc = khuVuc;
         } else {
             this.khuVuc = "KV" + khuVuc;
         }

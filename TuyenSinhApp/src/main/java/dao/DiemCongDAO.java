@@ -73,6 +73,23 @@ public class DiemCongDAO {
         }
     }
 
+    public DiemCong findByCccdToHopAndMethod(String cccd, String tohop, String phuongThuc) {
+        if (cccd == null || tohop == null || phuongThuc == null) return null;
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                "from DiemCong d where d.cccd = :cccd and d.maToHop = :tohop and lower(trim(d.phuongThuc)) = :pt", 
+                DiemCong.class)
+                .setParameter("cccd", cccd.trim())
+                .setParameter("tohop", tohop.trim())
+                .setParameter("pt", phuongThuc.trim().toLowerCase())
+                .setMaxResults(1)
+                .uniqueResult();
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            return null;
+        }
+    }
+
     /** Thêm mới hoặc cập nhật theo {@code id} (null = insert). */
     public void saveOrUpdate(DiemCong fromForm) {
         Transaction tx = null;
