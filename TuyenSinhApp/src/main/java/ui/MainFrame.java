@@ -70,6 +70,13 @@ public class MainFrame extends JFrame {
         currentPanel = key;
         cardLayout.show(contentArea, key);
         refreshSidebarHighlight();
+        
+        if ("dashboard".equals(key)) {
+            JPanel panel = panelMap.get(key);
+            if (panel instanceof DashboardPanel) {
+                ((DashboardPanel) panel).reloadData();
+            }
+        }
     }
 
     // ─── Sidebar ──────────────────────────────────────────────────────────────

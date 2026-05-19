@@ -119,4 +119,13 @@ public class DiemCongDAO {
             throw ex;
         }
     }
+
+    public long countTotalDiemCongs() {
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery("SELECT COUNT(d) FROM DiemCong d", Long.class).uniqueResult();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return 0;
+        }
+    }
 }

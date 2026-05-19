@@ -57,4 +57,13 @@ public class NganhDAO {
                 .uniqueResult();
         }
     }
+
+    public long countTotalNganh() {
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery("SELECT COUNT(n) FROM Nganh n", Long.class).uniqueResult();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return 0;
+        }
+    }
 }

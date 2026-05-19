@@ -9,8 +9,21 @@ import javax.swing.*;
 import javax.swing.border.*;
 import javax.swing.table.*;
 import java.awt.*;
+import java.text.DecimalFormat;
+import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
+
+import dao.ThiSinhDAO;
+import dao.NganhDAO;
+import dao.NguyenVongDAO;
+import dao.DiemCongDAO;
+import entity.ThiSinh;
+import entity.Nganh;
 
 public class DashboardPanel extends BasePanel {
+
+    private JScrollPane scroll;
 
     public DashboardPanel(MainFrame mainFrame) {
         super(mainFrame);
@@ -23,7 +36,16 @@ public class DashboardPanel extends BasePanel {
         RoundButton btnReport = RoundButton.primary("Xuất báo cáo");
         add(buildTopBar("Dashboard", "Tổng quan tuyển sinh 2025", btnImport, btnReport), BorderLayout.NORTH);
 
-        // Scrollable content
+        scroll = new JScrollPane();
+        scroll.setBorder(null);
+        scroll.getVerticalScrollBar().setUnitIncrement(10);
+        scroll.setBackground(AppTheme.BG_TERTIARY);
+        add(scroll, BorderLayout.CENTER);
+
+        reloadData();
+    }
+
+    public void reloadData() {
         JPanel content = new JPanel();
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
         content.setBackground(AppTheme.BG_TERTIARY);
@@ -45,11 +67,9 @@ public class DashboardPanel extends BasePanel {
         // Recent thí sinh
         content.add(buildRecentThiSinh());
 
-        JScrollPane scroll = new JScrollPane(content);
-        scroll.setBorder(null);
-        scroll.getVerticalScrollBar().setUnitIncrement(10);
-        scroll.setBackground(AppTheme.BG_TERTIARY);
-        add(scroll, BorderLayout.CENTER);
+        scroll.setViewportView(content);
+        scroll.revalidate();
+        scroll.repaint();
     }
 
     private JPanel buildStatRow() {
@@ -57,10 +77,17 @@ public class DashboardPanel extends BasePanel {
         row.setOpaque(false);
         row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 90));
 
-        row.add(UIComponents.statCard("Thí sinh", "2,412", AppTheme.PRIMARY, "Họ tên, CCCD, khu vực..."));
-        row.add(UIComponents.statCard("Ngành tuyển sinh", "32", AppTheme.GREEN, "Chỉ tiêu, điểm sàn..."));
-        row.add(UIComponents.statCard("Nguyện vọng", "18,645", AppTheme.AMBER, "Thứ tự, điểm xét tuyển..."));
-        row.add(UIComponents.statCard("Điểm cộng", "1,284", AppTheme.RED, "Tiếng Anh, HSG, tổng"));
+        DecimalFormat df = new DecimalFormat("#,###");
+        
+        long tsCount = ThiSinhDAO.countTotalCandidates();
+        long nganhCount = new NganhDAO().countTotalNganh();
+        long nvCount = new NguyenVongDAO().countTotalNguyenVongs();
+        long dcCount = new DiemCongDAO().countTotalDiemCongs();
+
+        row.add(UIComponents.statCard("Thí sinh", df.format(tsCount), AppTheme.PRIMARY, "Họ tên, CCCD, khu vực..."));
+        row.add(UIComponents.statCard("Ngành tuyển sinh", df.format(nganhCount), AppTheme.GREEN, "Chỉ tiêu, điểm sàn..."));
+        row.add(UIComponents.statCard("Nguyện vọng", df.format(nvCount), AppTheme.AMBER, "Thứ tự, điểm xét tuyển..."));
+        row.add(UIComponents.statCard("Điểm cộng", df.format(dcCount), AppTheme.RED, "Tiếng Anh, HSG, tổng"));
         return row;
     }
 
@@ -80,25 +107,34 @@ public class DashboardPanel extends BasePanel {
         header.add(title, BorderLayout.WEST);
         card.add(header, BorderLayout.NORTH);
 
-        String[][] data = {
-            {"GD Tiểu học",       "7450"},
-            {"SP Toán học",       "1925"},
-            {"GD Mầm non",        "1896"},
-            {"QL Giáo dục",       "1529"},
-            {"SP Tiếng Anh",      "1200"},
-            {"SP Ngữ văn",        "980"},
-            {"SP Âm nhạc",        "620"},
-            {"SP Mỹ thuật",       "480"},
-        };
-        int max = 7450;
+        List<Object[]> top8 = new NguyenVongDAO().getTop8NguyenvongByNganh();
+        List<Nganh> nganhs = new NganhDAO().findAll();
+        Map<String, String> nganhMap = new HashMap<>();
+        for (Nganh n : nganhs) nganhMap.put(n.getMaNganh(), n.getTenNganh());
+
+        long max = 0;
+        for (Object[] row : top8) {
+            long count = (Long) row[1];
+            if (count > max) max = count;
+        }
+        if (max == 0) max = 1;
 
         JPanel chartArea = new JPanel();
         chartArea.setLayout(new BoxLayout(chartArea, BoxLayout.Y_AXIS));
         chartArea.setBackground(AppTheme.BG_PRIMARY);
         chartArea.setBorder(new EmptyBorder(10, 12, 10, 12));
 
-        for (String[] row : data) {
-            int val = Integer.parseInt(row[1]);
+        for (Object[] row : top8) {
+            String maNganh = (String) row[0];
+            String tenNganh = nganhMap.getOrDefault(maNganh, maNganh);
+            if (tenNganh == null) tenNganh = "Không xác định";
+            
+            // Format tenNganh if it's too long
+            if (tenNganh.length() > 20) {
+                tenNganh = tenNganh.substring(0, 17) + "...";
+            }
+
+            long val = (Long) row[1];
             double pct = (double) val / max;
 
             JPanel barRow = new JPanel(new BorderLayout(6, 0));
@@ -106,7 +142,7 @@ public class DashboardPanel extends BasePanel {
             barRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 20));
             barRow.setBorder(new EmptyBorder(2, 0, 2, 0));
 
-            JLabel lbl = new JLabel(row[0]);
+            JLabel lbl = new JLabel(tenNganh);
             lbl.setFont(AppTheme.FONT_SMALL);
             lbl.setForeground(AppTheme.TEXT_SECOND);
             lbl.setPreferredSize(new Dimension(100, 16));
@@ -161,10 +197,17 @@ public class DashboardPanel extends BasePanel {
         body.setBackground(AppTheme.BG_PRIMARY);
         body.setBorder(new EmptyBorder(14, 14, 14, 14));
 
+        Map<String, Long> statsMap = new NguyenVongDAO().getStatusStatistics();
+        long trúngTuyển = statsMap.getOrDefault("Trúng tuyển", 0L);
+        long dướiSàn = statsMap.getOrDefault("Dưới sàn", 0L);
+        long chưaXét = statsMap.getOrDefault("Chưa xét", 0L);
+
+        DecimalFormat df = new DecimalFormat("#,###");
+
         String[][] stats = {
-            {"Trúng tuyển", "1,284", "Đã đạt"},
-            {"Dưới sàn",    "716",   "Chưa đạt"},
-            {"Chưa xét",    "412",   "Chờ xử lý"},
+            {"Trúng tuyển", df.format(trúngTuyển), "Đã đạt"},
+            {"Dưới sàn",    df.format(dướiSàn),   "Chưa đạt"},
+            {"Chưa xét",    df.format(chưaXét),   "Chờ xử lý"},
         };
         Color[] colors = {AppTheme.GREEN, AppTheme.RED, AppTheme.AMBER};
 
@@ -235,13 +278,20 @@ public class DashboardPanel extends BasePanel {
         card.add(header, BorderLayout.NORTH);
 
         String[] cols = {"CCCD", "Họ tên", "Ngày sinh", "Giới tính", "Khu vực", "Đối tượng"};
-        Object[][] data = {
-            {"001207004846", "Nguyễn Thị An",   "25/07/2007", "Nữ",  "KV1",    "—"},
-            {"001207005157", "Trần Thị Bình",   "08/09/2007", "Nữ",  "KV1",    "—"},
-            {"001207006913", "Lê Văn Cường",    "02/10/2006", "Nam", "KV3",    "—"},
-            {"001207008830", "Hoàng Văn Em",    "27/01/2007", "Nam", "KV1",    "UT3"},
-            {"001207009704", "Vũ Thị Phương",   "16/07/2007", "Nữ",  "KV2-NT", "—"},
-        };
+        
+        List<ThiSinh> recentTS = ThiSinhDAO.getTop5RecentCandidates();
+        Object[][] data = new Object[recentTS.size()][6];
+        
+        for (int i = 0; i < recentTS.size(); i++) {
+            ThiSinh ts = recentTS.get(i);
+            data[i][0] = ts.getCccd();
+            data[i][1] = (ts.getHo() != null ? ts.getHo() : "") + " " + (ts.getTen() != null ? ts.getTen() : "");
+            data[i][2] = ts.getNgaySinh() != null ? ts.getNgaySinh() : "—";
+            data[i][3] = ts.getGioiTinh() != null ? ts.getGioiTinh() : "—";
+            data[i][4] = ts.getKhuVuc() != null ? ts.getKhuVuc() : "—";
+            data[i][5] = ts.getDoiTuong() != null ? ts.getDoiTuong() : "—";
+        }
+
         JTable table = UIComponents.createTable(cols, data);
         card.add(new JScrollPane(table), BorderLayout.CENTER);
         return card;

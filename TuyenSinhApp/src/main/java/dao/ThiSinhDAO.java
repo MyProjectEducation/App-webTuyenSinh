@@ -99,4 +99,24 @@ public class ThiSinhDAO {
         }
         return candidates;
     }
+
+    public static long countTotalCandidates() {
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery("SELECT COUNT(t) FROM ThiSinh t", Long.class).uniqueResult();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return 0;
+        }
+    }
+
+    public static List<ThiSinh> getTop5RecentCandidates() {
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery("FROM ThiSinh ORDER BY idthisinh DESC", ThiSinh.class)
+                    .setMaxResults(5)
+                    .list();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return new ArrayList<>();
+        }
+    }
 }
